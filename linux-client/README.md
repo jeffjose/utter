@@ -2,6 +2,8 @@
 
 Receives text from Android and simulates keyboard input on Linux.
 
+Features a clean, interactive terminal UI that updates in real-time showing connection status, messages received, and errors.
+
 ## Requirements
 
 - Python 3.9+
@@ -26,9 +28,17 @@ sudo apt install xdotool
 sudo apt install ydotool
 ```
 
+## Features
+
+- **Interactive Display**: Live-updating status panel instead of scrolling logs
+- **Auto-reconnect**: Automatically reconnects if connection drops
+- **Error Handling**: Clear error messages with helpful suggestions
+- **Message Counter**: Track how many messages have been received
+- **Clean UI**: Uses Rich library for beautiful terminal output
+
 ## Usage
 
-The script uses inline dependencies (PEP 723), so `uv` will automatically manage dependencies.
+The script uses inline dependencies (PEP 723), so `uv` will automatically manage dependencies (websockets + rich).
 
 ### Connect to local relay server
 

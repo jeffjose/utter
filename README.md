@@ -154,15 +154,21 @@ cd linux-client
 uv run utter_client.py
 ```
 
-You should see:
+You should see an interactive status panel:
 
 ```
-[HH:MM:SS] ✓ xdotool found
-[HH:MM:SS] Utter Linux Client started
-[HH:MM:SS] Waiting for text from Android...
-[HH:MM:SS] Connecting to ws://localhost:8080...
-[HH:MM:SS] ✓ Connected to relay server
+╭─────────────── 🎤 Utter Linux Client ────────────────╮
+│                                                      │
+│   Status:     Registered - Ready                    │
+│   Server:     ws://localhost:8080                   │
+│   Client ID:  abc123xyz                             │
+│   Tool:       ✓ xdotool available                   │
+│   Messages:   0                                      │
+│                                                      │
+╰───── Waiting for voice input from Android... ───────╯
 ```
+
+The display updates in real-time as messages arrive!
 
 ### Test Full Flow
 
