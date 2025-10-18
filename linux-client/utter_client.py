@@ -147,11 +147,12 @@ class UtterClient:
             padding=(1, 2)
         )
 
-    async def connect(self):
+    async def connect(self, live):
         """Connect to the relay server and listen for messages"""
         self.connection_attempts += 1
         self.status = "Connecting..."
         self.last_error = ""
+        live.update(self.generate_display())
 
         # Clear previous connection state
         self.ws = None
@@ -167,16 +168,21 @@ class UtterClient:
             ) as ws:
                 self.ws = ws
                 self.status = "Connected"
+                live.update(self.generate_display())
 
                 # Message loop - will exit on disconnect
                 async for message in ws:
                     try:
                         data = json.loads(message)
                         await self.handle_message(data)
+                        # Update display after handling message
+                        live.update(self.generate_display())
                     except json.JSONDecodeError:
                         self.last_error = "Invalid JSON received"
+                        live.update(self.generate_display())
                     except Exception as e:
                         self.last_error = f"Handler error: {e}"
+                        live.update(self.generate_display())
 
         except websockets.exceptions.ConnectionClosedOK:
             self.status = "Disconnected"
@@ -215,14 +221,11 @@ class UtterClient:
 
     async def run_with_display(self):
         """Main run loop with live display"""
-        with Live(self.generate_display(), refresh_per_second=4, console=self.console) as live:
+        with Live(self.generate_display(), refresh_per_second=10, console=self.console) as live:
             while True:
                 try:
-                    # Update display before connecting
-                    live.update(self.generate_display())
-
-                    # Try to connect
-                    await self.connect()
+                    # Try to connect (pass live so it can update display)
+                    await self.connect(live)
 
                     # Update display after disconnect
                     live.update(self.generate_display())
