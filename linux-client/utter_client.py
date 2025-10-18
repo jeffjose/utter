@@ -153,11 +153,22 @@ class UtterClient:
         self.status = "Connecting..."
         self.last_error = ""
 
+        # Clear previous connection state
+        self.ws = None
+        self.client_id = None
+
         try:
-            async with websockets.connect(self.server_url) as ws:
+            # Connect with timeout and ping/pong for keepalive
+            async with websockets.connect(
+                self.server_url,
+                ping_interval=20,  # Send ping every 20 seconds
+                ping_timeout=10,   # Wait 10 seconds for pong
+                close_timeout=5    # Wait 5 seconds for close handshake
+            ) as ws:
                 self.ws = ws
                 self.status = "Connected"
 
+                # Message loop - will exit on disconnect
                 async for message in ws:
                     try:
                         data = json.loads(message)
@@ -167,30 +178,47 @@ class UtterClient:
                     except Exception as e:
                         self.last_error = f"Handler error: {e}"
 
-        except websockets.exceptions.ConnectionClosed:
+        except websockets.exceptions.ConnectionClosedOK:
             self.status = "Disconnected"
-            self.last_error = "Connection closed by server"
+            self.last_error = "Connection closed normally"
+        except websockets.exceptions.ConnectionClosedError as e:
+            self.status = "Disconnected"
+            if e.rcvd:
+                self.last_error = f"Server closed: {e.rcvd.reason or 'no reason'}"
+            else:
+                self.last_error = "Connection lost unexpectedly"
         except (ConnectionRefusedError, OSError) as e:
             self.status = "Connection Refused"
             if "111" in str(e) or "Connection refused" in str(e):
                 self.last_error = "Server not running - start relay server first"
             else:
                 self.last_error = "Cannot connect to server"
+        except asyncio.TimeoutError:
+            self.status = "Timeout"
+            self.last_error = "Connection timeout - server not responding"
         except Exception as e:
             self.status = "Connection Error"
             # Show simpler error message
             error_str = str(e)
             if "Multiple exceptions" in error_str:
                 self.last_error = "Server not reachable - check server URL"
+            elif "getaddrinfo failed" in error_str:
+                self.last_error = "Cannot resolve hostname"
             else:
                 self.last_error = error_str[:80]  # Truncate long errors
+        finally:
+            # Always clear connection state on exit
+            self.ws = None
+            if not self.client_id:
+                # Only clear if we never got registered
+                pass
 
     async def run_with_display(self):
         """Main run loop with live display"""
         with Live(self.generate_display(), refresh_per_second=4, console=self.console) as live:
             while True:
                 try:
-                    # Update display
+                    # Update display before connecting
                     live.update(self.generate_display())
 
                     # Try to connect
@@ -199,10 +227,12 @@ class UtterClient:
                     # Update display after disconnect
                     live.update(self.generate_display())
 
-                    # Wait before reconnecting
-                    self.status = "Reconnecting in 5s..."
-                    live.update(self.generate_display())
-                    await asyncio.sleep(5)
+                    # Countdown before reconnecting
+                    reconnect_delay = 5
+                    for remaining in range(reconnect_delay, 0, -1):
+                        self.status = f"Reconnecting in {remaining}s..."
+                        live.update(self.generate_display())
+                        await asyncio.sleep(1)
 
                 except KeyboardInterrupt:
                     self.status = "Shutting down..."
@@ -211,7 +241,11 @@ class UtterClient:
                 except Exception as e:
                     self.last_error = f"Fatal error: {e}"
                     live.update(self.generate_display())
-                    await asyncio.sleep(5)
+                    # Wait before retry on fatal error
+                    for remaining in range(5, 0, -1):
+                        self.status = f"Retrying in {remaining}s..."
+                        live.update(self.generate_display())
+                        await asyncio.sleep(1)
 
     async def run(self):
         """Main entry point"""

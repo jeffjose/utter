@@ -31,10 +31,23 @@ sudo apt install ydotool
 ## Features
 
 - **Interactive Display**: Live-updating status panel instead of scrolling logs
-- **Auto-reconnect**: Automatically reconnects if connection drops
+- **Auto-reconnect**: Automatically reconnects if connection drops with countdown timer
+- **Ping/Pong Keepalive**: Detects dead connections within 20-30 seconds
+- **Connection Resilience**: Handles server restarts, network interruptions, and timeouts
 - **Error Handling**: Clear error messages with helpful suggestions
 - **Message Counter**: Track how many messages have been received
 - **Clean UI**: Uses Rich library for beautiful terminal output
+
+### Resilience Features
+
+The client is designed to handle real-world network issues:
+
+- **Server goes down?** Auto-reconnects when server comes back
+- **Network blip?** Detects via keepalive and reconnects
+- **Timeout?** Won't hang - fails fast and retries
+- **DNS issues?** Shows helpful error messages
+
+See [TEST_RESILIENCE.md](TEST_RESILIENCE.md) for detailed testing scenarios.
 
 ## Usage
 
