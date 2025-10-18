@@ -95,7 +95,7 @@ class MainActivity : AppCompatActivity() {
         updateStatus("Connecting...", false)
 
         webSocketClient = WebSocketClient(serverUrl)
-        webSocketClient?.setListener(object : WebSocketClient.WebSocketListener {
+        webSocketClient?.setListener(object : WebSocketClient.ConnectionListener {
             override fun onConnected() {
                 runOnUiThread {
                     updateStatus("Connected", true)

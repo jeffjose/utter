@@ -111,18 +111,33 @@ function generateId(): string {
 }
 
 // Graceful shutdown
-process.on('SIGINT', () => {
+function shutdown() {
   console.log('\nShutting down relay server...');
-  wss.close(() => {
-    console.log('Relay server closed');
-    process.exit(0);
-  });
-});
+  console.log(`Closing ${clients.size} active connections...`);
 
-process.on('SIGTERM', () => {
-  console.log('\nShutting down relay server...');
+  // Close all client connections
+  clients.forEach((client) => {
+    try {
+      client.ws.close(1001, 'Server shutting down');
+    } catch (e) {
+      // Ignore errors during close
+    }
+  });
+
+  clients.clear();
+
+  // Close the WebSocket server
   wss.close(() => {
     console.log('Relay server closed');
     process.exit(0);
   });
-});
+
+  // Force exit after 2 seconds if graceful shutdown hangs
+  setTimeout(() => {
+    console.log('Force closing...');
+    process.exit(0);
+  }, 2000);
+}
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
