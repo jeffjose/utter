@@ -170,12 +170,20 @@ class UtterClient:
         except websockets.exceptions.ConnectionClosed:
             self.status = "Disconnected"
             self.last_error = "Connection closed by server"
-        except ConnectionRefusedError:
+        except (ConnectionRefusedError, OSError) as e:
             self.status = "Connection Refused"
-            self.last_error = "Server not running?"
+            if "111" in str(e) or "Connection refused" in str(e):
+                self.last_error = "Server not running - start relay server first"
+            else:
+                self.last_error = "Cannot connect to server"
         except Exception as e:
             self.status = "Connection Error"
-            self.last_error = str(e)
+            # Show simpler error message
+            error_str = str(e)
+            if "Multiple exceptions" in error_str:
+                self.last_error = "Server not reachable - check server URL"
+            else:
+                self.last_error = error_str[:80]  # Truncate long errors
 
     async def run_with_display(self):
         """Main run loop with live display"""
