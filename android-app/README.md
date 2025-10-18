@@ -2,6 +2,37 @@
 
 Simple Android app for voice dictation that sends text to Linux via relay server.
 
+## Project Structure
+
+This is a complete, buildable Android project with the following structure:
+
+```
+android-app/
+├── app/
+│   ├── src/main/
+│   │   ├── java/com/utter/android/
+│   │   │   ├── MainActivity.kt           # Main UI and logic
+│   │   │   └── WebSocketClient.kt        # WebSocket connection handler
+│   │   ├── res/
+│   │   │   ├── layout/
+│   │   │   │   └── activity_main.xml     # UI layout
+│   │   │   └── values/
+│   │   │       ├── strings.xml           # String resources
+│   │   │       └── colors.xml            # Color definitions
+│   │   └── AndroidManifest.xml           # App manifest with permissions
+│   ├── build.gradle.kts                  # App-level build config
+│   └── proguard-rules.pro                # ProGuard rules
+├── gradle/wrapper/                       # Gradle wrapper files
+├── build.gradle.kts                      # Root build config
+├── settings.gradle.kts                   # Project settings
+├── gradle.properties                     # Gradle properties
+├── gradlew                               # Gradle wrapper script (Unix)
+├── gradlew.bat                           # Gradle wrapper script (Windows)
+├── .mise.toml                            # Java 17 configuration
+├── build.sh                              # Build helper script
+└── README.md                             # This file
+```
+
 ## Features
 
 - Voice input using Google Keyboard speech-to-text
@@ -140,14 +171,32 @@ For Phase 2+ with cloud relay server:
 
 ## Building APK
 
+**Important:** This project requires Java 17 (not Java 25). The build is configured to use mise for Java version management.
+
+### Using the build script (recommended):
+
+```bash
+./build.sh
+```
+
+### Manual build:
+
 Debug APK:
 ```bash
-./gradlew assembleDebug
+mise exec -- ./gradlew assembleDebug
 ```
 
 Release APK (requires signing):
 ```bash
-./gradlew assembleRelease
+mise exec -- ./gradlew assembleRelease
 ```
 
-APK location: `app/build/outputs/apk/`
+APK location: `app/build/outputs/apk/debug/app-debug.apk`
+
+### Installing on Device
+
+```bash
+adb install app/build/outputs/apk/debug/app-debug.apk
+```
+
+Or use Android Studio: File → Open → Select android-app folder
