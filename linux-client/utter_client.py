@@ -17,7 +17,7 @@ from datetime import datetime
 from typing import Optional
 
 import websockets
-from websockets.client import WebSocketClientProtocol
+from websockets.asyncio.client import ClientConnection
 from rich.console import Console
 from rich.live import Live
 from rich.table import Table
@@ -30,7 +30,7 @@ class UtterClient:
     def __init__(self, server_url: str, use_ydotool: bool = False):
         self.server_url = server_url
         self.use_ydotool = use_ydotool
-        self.ws: Optional[WebSocketClientProtocol] = None
+        self.ws: Optional[ClientConnection] = None
         self.client_id: Optional[str] = None
         self.console = Console()
 
