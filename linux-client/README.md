@@ -32,7 +32,7 @@ sudo apt install ydotool
 
 - **Interactive Display**: Live-updating status panel instead of scrolling logs
 - **Auto-reconnect**: Automatically reconnects if connection drops with countdown timer
-- **Ping/Pong Keepalive**: Detects dead connections within 20-30 seconds
+- **Ping/Pong Keepalive**: Detects dead connections within 5-10 seconds
 - **Connection Resilience**: Handles server restarts, network interruptions, and timeouts
 - **Error Handling**: Clear error messages with helpful suggestions
 - **Message Counter**: Track how many messages have been received

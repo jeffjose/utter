@@ -6,7 +6,7 @@ import java.util.concurrent.TimeUnit
 
 class WebSocketClient(private val serverUrl: String) {
 
-    interface WebSocketListener {
+    interface ConnectionListener {
         fun onConnected()
         fun onDisconnected()
         fun onMessage(message: String)
@@ -14,7 +14,7 @@ class WebSocketClient(private val serverUrl: String) {
     }
 
     private var webSocket: WebSocket? = null
-    private var listener: WebSocketListener? = null
+    private var listener: ConnectionListener? = null
     private var isConnected = false
 
     private val client = OkHttpClient.Builder()
@@ -23,7 +23,7 @@ class WebSocketClient(private val serverUrl: String) {
         .connectTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    fun setListener(listener: WebSocketListener) {
+    fun setListener(listener: ConnectionListener) {
         this.listener = listener
     }
 
@@ -32,7 +32,7 @@ class WebSocketClient(private val serverUrl: String) {
             .url(serverUrl)
             .build()
 
-        webSocket = client.newWebSocket(request, object : WebSocketListener {
+        webSocket = client.newWebSocket(request, object : okhttp3.WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 isConnected = true
                 listener?.onConnected()

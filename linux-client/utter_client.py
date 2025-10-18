@@ -162,9 +162,9 @@ class UtterClient:
             # Connect with timeout and ping/pong for keepalive
             async with websockets.connect(
                 self.server_url,
-                ping_interval=20,  # Send ping every 20 seconds
-                ping_timeout=10,   # Wait 10 seconds for pong
-                close_timeout=5    # Wait 5 seconds for close handshake
+                ping_interval=5,   # Send ping every 5 seconds
+                ping_timeout=5,    # Wait 5 seconds for pong
+                close_timeout=3    # Wait 3 seconds for close handshake
             ) as ws:
                 self.ws = ws
                 self.status = "Connected"

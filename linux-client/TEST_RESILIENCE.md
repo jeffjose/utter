@@ -36,7 +36,7 @@ uv run utter_client.py
 ```
 
 **Expected Behavior:**
-- Client detects disconnect within 20-30 seconds (ping timeout)
+- Client detects disconnect within 5-10 seconds (ping timeout)
 - Status changes to "Disconnected"
 - Error: "Connection lost unexpectedly"
 - Automatically attempts reconnection with countdown
@@ -93,9 +93,9 @@ uv run utter_client.py --server ws://invalid-hostname:8080
 - Visual feedback with attempt counter
 
 ### Ping/Pong Keepalive
-- Client sends ping every 20 seconds
-- Expects pong within 10 seconds
-- Detects dead connections automatically
+- Client sends ping every 5 seconds
+- Expects pong within 5 seconds
+- Detects dead connections within 10 seconds maximum
 
 ### Connection Timeouts
 - Close timeout: 5 seconds
