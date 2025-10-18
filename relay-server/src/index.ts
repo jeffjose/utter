@@ -1,5 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import * as dotenv from 'dotenv';
+import * as os from 'os';
 
 dotenv.config();
 
@@ -14,10 +15,52 @@ interface Client {
 
 const clients = new Map<string, Client>();
 
+// Listen on all network interfaces (don't specify host parameter)
 const wss = new WebSocketServer({ port: PORT });
 
-console.log(`Utter Relay Server started on port ${PORT}`);
+// Helper function to get network addresses
+function getNetworkAddresses(): string[] {
+  const interfaces = os.networkInterfaces();
+  const addresses: string[] = [];
+
+  for (const name of Object.keys(interfaces)) {
+    const iface = interfaces[name];
+    if (!iface) continue;
+
+    for (const addr of iface) {
+      // Skip internal (loopback) and non-IPv4 addresses
+      if (addr.family === 'IPv4' && !addr.internal) {
+        addresses.push(addr.address);
+      }
+    }
+  }
+
+  return addresses;
+}
+
+console.log('='.repeat(60));
+console.log('Utter Relay Server started');
+console.log('='.repeat(60));
+console.log(`Listening on all interfaces: *:${PORT}`);
+console.log('');
+console.log('Available endpoints:');
+console.log(`  - ws://localhost:${PORT} (local only)`);
+
+const networkAddresses = getNetworkAddresses();
+if (networkAddresses.length > 0) {
+  networkAddresses.forEach(addr => {
+    console.log(`  - ws://${addr}:${PORT} (network)`);
+  });
+} else {
+  console.log('  - No network interfaces found');
+}
+
+console.log('');
+console.log('Android Emulator: Use ws://10.0.2.2:' + PORT);
+console.log('Physical Device: Use one of the network addresses above');
+console.log('='.repeat(60));
 console.log('Phase 1: Direct echo mode - all messages broadcast to all clients');
+console.log('');
 
 wss.on('connection', (ws: WebSocket) => {
   const clientId = generateId();

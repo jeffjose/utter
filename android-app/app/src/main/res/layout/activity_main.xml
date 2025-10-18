@@ -36,7 +36,7 @@
         android:id="@+id/serverUrlInput"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:hint="ws://192.168.1.100:8080"
+        android:hint="192.168.1.100:8080"
         android:inputType="textUri"
         android:textSize="14sp"
         app:layout_constraintEnd_toEndOf="parent"

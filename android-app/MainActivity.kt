@@ -1,5 +1,6 @@
 package com.utter.android
 
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -28,6 +29,25 @@ class MainActivity : AppCompatActivity() {
     // Auto-send delay in milliseconds (2 seconds)
     private val AUTO_SEND_DELAY = 2000L
 
+    private fun isEmulator(): Boolean {
+        return (Build.FINGERPRINT.startsWith("generic")
+                || Build.FINGERPRINT.startsWith("unknown")
+                || Build.MODEL.contains("google_sdk")
+                || Build.MODEL.contains("Emulator")
+                || Build.MODEL.contains("Android SDK built for x86")
+                || Build.MANUFACTURER.contains("Genymotion")
+                || (Build.BRAND.startsWith("generic") && Build.DEVICE.startsWith("generic"))
+                || "google_sdk" == Build.PRODUCT)
+    }
+
+    private fun getDefaultServerUrl(): String {
+        return if (isEmulator()) {
+            "ws://10.0.2.2:8080"  // Emulator - use special loopback address
+        } else {
+            "192.168.3.189:8080"  // Physical device - pre-filled for testing
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -39,8 +59,8 @@ class MainActivity : AppCompatActivity() {
         textInput = findViewById(R.id.textInput)
         sendButton = findViewById(R.id.sendButton)
 
-        // Set default server URL (localhost for emulator, change for real device)
-        serverUrlInput.setText("ws://10.0.2.2:8080") // Emulator default
+        // Set default server URL based on whether running on emulator or physical device
+        serverUrlInput.setText(getDefaultServerUrl())
 
         // Connect button handler
         connectButton.setOnClickListener {
@@ -85,11 +105,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun connect() {
-        val serverUrl = serverUrlInput.text.toString().trim()
+        var serverUrl = serverUrlInput.text.toString().trim()
 
         if (serverUrl.isEmpty()) {
             updateStatus("Please enter server URL", false)
             return
+        }
+
+        // Auto-prepend ws:// if not present
+        if (!serverUrl.startsWith("ws://") && !serverUrl.startsWith("wss://")) {
+            serverUrl = "ws://$serverUrl"
+            serverUrlInput.setText(serverUrl)  // Update the UI to show the full URL
         }
 
         updateStatus("Connecting...", false)

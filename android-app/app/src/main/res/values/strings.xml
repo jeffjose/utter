@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Utter</string>
-    <string name="server_url_hint">ws://192.168.1.100:8080</string>
+    <string name="server_url_hint">192.168.1.100:8080</string>
     <string name="connect">Connect</string>
     <string name="disconnect">Disconnect</string>
     <string name="send">Send</string>
