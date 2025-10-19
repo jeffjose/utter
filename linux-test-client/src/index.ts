@@ -97,8 +97,6 @@ class TestClient {
       this.keyManager.getPublicKeyBytes()
     );
 
-    console.log('[Crypto] E2E encryption enabled\n');
-
     this.rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,

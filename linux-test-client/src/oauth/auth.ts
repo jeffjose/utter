@@ -50,7 +50,6 @@ export class OAuthManager {
 
         if (tokens.expiresAt > now + 300) {
           // Token valid for at least 5 more minutes
-          console.log('✓ Using cached OAuth token');
           return tokens;
         } else if (tokens.refreshToken) {
           // Try to refresh
