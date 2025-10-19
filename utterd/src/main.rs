@@ -65,12 +65,12 @@ fn strip_ws_prefix(url: &str) -> &str {
 #[command(name = "utterd")]
 #[command(about = "utterd - Voice dictation from Android to Linux", long_about = None)]
 struct Args {
-    /// WebSocket server URL
-    #[arg(long, env = "UTTER_RELAY_SERVER", default_value = "ws://localhost:8080")]
+    /// Relay server URL (default: localhost:8080)
+    #[arg(long, env = "UTTER_RELAY_SERVER", default_value = "ws://localhost:8080", hide_default_value = true)]
     server: String,
 
-    /// Tool for simulating keyboard input (xdotool or ydotool)
-    #[arg(long, default_value = "xdotool")]
+    /// Tool for simulating keyboard input (default: xdotool)
+    #[arg(long, default_value = "xdotool", hide_default_value = true)]
     tool: String,
 }
 
