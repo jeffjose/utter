@@ -1,4 +1,4 @@
-import { ed25519 } from '@noble/curves/ed25519';
+import { ed25519 } from '@noble/curves/ed25519.js';
 import { randomBytes } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';

@@ -1,2 +1,3 @@
 export { KeyManager } from './keys.js';
-export { MessageEncryption, EncryptedMessage } from './encryption.js';
+export { MessageEncryption } from './encryption.js';
+export type { EncryptedMessage } from './encryption.js';
