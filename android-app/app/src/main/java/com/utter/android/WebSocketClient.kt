@@ -9,7 +9,8 @@ import java.util.concurrent.TimeUnit
 
 class WebSocketClient(
     private val serverUrl: String,
-    private val cryptoManager: CryptoManager? = null
+    private val cryptoManager: CryptoManager? = null,
+    private val idToken: String? = null
 ) {
 
     companion object {
@@ -85,6 +86,12 @@ class WebSocketClient(
                                 cryptoManager?.let {
                                     put("publicKey", it.getPublicKey())
                                     Log.d(TAG, "Including public key in registration")
+                                }
+
+                                // Include OAuth token if available
+                                idToken?.let {
+                                    put("token", it)
+                                    Log.d(TAG, "Including OAuth token in registration")
                                 }
                             }
                             webSocket.send(registerMsg.toString())

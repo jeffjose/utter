@@ -56,6 +56,9 @@ dependencies {
     // Cryptography for E2E encryption
     implementation("com.google.crypto.tink:tink-android:1.13.0")
 
+    // Google Sign-In for OAuth
+    implementation("com.google.android.gms:play-services-auth:21.0.0")
+
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")

@@ -17,11 +17,14 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
+        // TODO: Replace with your Google OAuth Client ID
+        private const val GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"
     }
 
     private lateinit var serverUrlInput: EditText
     private lateinit var connectButton: Button
     private lateinit var statusText: TextView
+    private lateinit var authManager: GoogleAuthManager
 
     private fun isEmulator(): Boolean {
         return (Build.FINGERPRINT.startsWith("generic")
@@ -50,6 +53,9 @@ class MainActivity : AppCompatActivity() {
         serverUrlInput = findViewById(R.id.serverUrlInput)
         connectButton = findViewById(R.id.connectButton)
         statusText = findViewById(R.id.statusText)
+
+        // Initialize OAuth manager
+        authManager = GoogleAuthManager(this, GOOGLE_CLIENT_ID)
 
         // Set default server URL
         serverUrlInput.setText(getDefaultServerUrl())
@@ -91,8 +97,16 @@ class MainActivity : AppCompatActivity() {
             Log.d(TAG, "Crypto initialized. Public key: ${publicKey?.take(32)}...")
         }
 
+        // Get OAuth ID token
+        val idToken = authManager.getIdToken()
+        if (idToken != null) {
+            Log.d(TAG, "Using OAuth ID token")
+        } else {
+            Log.w(TAG, "No OAuth token available - using test mode")
+        }
+
         WebSocketManager.serverUrl = serverUrl
-        WebSocketManager.client = WebSocketClient(serverUrl, WebSocketManager.cryptoManager)
+        WebSocketManager.client = WebSocketClient(serverUrl, WebSocketManager.cryptoManager, idToken)
 
         WebSocketManager.client?.setListener(object : WebSocketClient.ConnectionListener {
             override fun onConnected() {
