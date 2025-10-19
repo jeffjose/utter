@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <TextView
+        android:id="@+id/deviceNameText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Sending to: Device Name"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:textAlignment="center"
+        android:layout_marginBottom="24dp"/>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Tap the microphone 🎤 on your keyboard to speak"
+        android:textSize="14sp"
+        android:textColor="@android:color/darker_gray"
+        android:textAlignment="center"
+        android:layout_marginBottom="16dp"/>
+
+    <EditText
+        android:id="@+id/textInput"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:hint="Tap to speak or type..."
+        android:gravity="top|start"
+        android:inputType="textMultiLine|textCapSentences"
+        android:padding="16dp"
+        android:textSize="18sp"
+        android:background="@android:drawable/edit_text"/>
+
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Speak or type a message..."
+        android:textSize="14sp"
+        android:textAlignment="center"
+        android:textColor="@android:color/darker_gray"
+        android:layout_marginTop="16dp"
+        android:padding="12dp"/>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="• Tap the text box\n• Use keyboard's mic button to speak\n• Text auto-sends after 2 seconds\n• Box clears automatically"
+        android:textSize="12sp"
+        android:textColor="#999999"
+        android:layout_marginTop="8dp"/>
+
+</LinearLayout>

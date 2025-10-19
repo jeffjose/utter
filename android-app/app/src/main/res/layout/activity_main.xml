@@ -1,156 +1,62 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout
+<LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="16dp"
-    tools:context=".MainActivity">
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:gravity="center">
 
-    <!-- App Title -->
     <TextView
-        android:id="@+id/titleText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Utter Dictation"
-        android:textSize="24sp"
+        android:text="🎤 Utter"
+        android:textSize="32sp"
         android:textStyle="bold"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        android:layout_marginTop="16dp" />
+        android:layout_marginBottom="8dp"/>
 
-    <!-- Server URL Input -->
     <TextView
-        android:id="@+id/serverLabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Server URL:"
+        android:text="Voice dictation to Linux"
+        android:textSize="16sp"
+        android:textColor="@android:color/darker_gray"
+        android:layout_marginBottom="48dp"/>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Server URL"
         android:textSize="14sp"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/titleText"
-        android:layout_marginTop="32dp" />
+        android:textStyle="bold"
+        android:layout_marginBottom="8dp"/>
 
     <EditText
         android:id="@+id/serverUrlInput"
-        android:layout_width="0dp"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="192.168.1.100:8080"
+        android:hint="ws://192.168.1.100:8080"
         android:inputType="textUri"
-        android:textSize="14sp"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/serverLabel"
-        android:layout_marginTop="8dp" />
+        android:padding="12dp"
+        android:textSize="16sp"
+        android:layout_marginBottom="24dp"/>
 
-    <!-- Connect Button -->
     <Button
         android:id="@+id/connectButton"
-        android:layout_width="0dp"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Connect"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/serverUrlInput"
-        android:layout_marginTop="16dp" />
+        android:textSize="18sp"
+        android:padding="16dp"
+        android:layout_marginBottom="24dp"/>
 
-    <!-- Status Text -->
     <TextView
         android:id="@+id/statusText"
-        android:layout_width="0dp"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Not connected"
+        android:text="Enter server URL and tap Connect"
         android:textAlignment="center"
-        android:textSize="16sp"
-        android:textColor="@android:color/holo_red_dark"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/connectButton"
-        android:layout_marginTop="16dp" />
-
-    <!-- Divider -->
-    <View
-        android:id="@+id/divider"
-        android:layout_width="0dp"
-        android:layout_height="1dp"
-        android:background="#CCCCCC"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/statusText"
-        android:layout_marginTop="24dp" />
-
-    <!-- Target Device Selection -->
-    <TextView
-        android:id="@+id/targetLabel"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Target Device:"
         android:textSize="14sp"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/divider"
-        android:layout_marginTop="24dp" />
+        android:textColor="@android:color/darker_gray"/>
 
-    <Spinner
-        android:id="@+id/targetDeviceSpinner"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:enabled="false"
-        android:minHeight="48dp"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/targetLabel"
-        android:layout_marginTop="8dp" />
-
-    <!-- Text Input Label -->
-    <TextView
-        android:id="@+id/textInputLabel"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Voice Input:"
-        android:textSize="14sp"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/targetDeviceSpinner"
-        android:layout_marginTop="24dp" />
-
-    <!-- Text Input Field -->
-    <EditText
-        android:id="@+id/textInput"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:hint="Tap to speak (auto-sends after 2s)"
-        android:minHeight="100dp"
-        android:gravity="top|start"
-        android:inputType="textMultiLine|textCapSentences"
-        android:enabled="false"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/textInputLabel"
-        android:layout_marginTop="8dp" />
-
-    <!-- Send Button -->
-    <Button
-        android:id="@+id/sendButton"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:text="Send Now"
-        android:enabled="false"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/textInput"
-        android:layout_marginTop="16dp" />
-
-    <!-- Instructions -->
-    <TextView
-        android:id="@+id/instructionsText"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:text="1. Enter server URL\n2. Connect\n3. Use voice input from keyboard\n4. Text auto-sends to Linux"
-        android:textSize="12sp"
-        android:textColor="#666666"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent"
-        android:layout_marginBottom="16dp" />
-
-</androidx.constraintlayout.widget.ConstraintLayout>
+</LinearLayout>
