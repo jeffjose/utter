@@ -493,7 +493,7 @@ impl UtterClient {
         loop {
             // Try to connect
             if let Err(e) = self.connect().await {
-                println!("\r\x1b[K{}✗ {}{}", colors::RED, e, colors::RESET);
+                print!("\r\x1b[K{}✗ {}{}", colors::RED, e, colors::RESET);
             }
 
             // Reconnect after 5 seconds
