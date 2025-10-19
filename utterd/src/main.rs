@@ -113,16 +113,12 @@ enum WsMessage {
 #[derive(Clone)]
 struct AppState {
     client_id: Option<String>,
-    message_count: u32,
-    last_text: String,
 }
 
 impl AppState {
     fn new() -> Self {
         Self {
             client_id: None,
-            message_count: 0,
-            last_text: String::new(),
         }
     }
 }
@@ -243,7 +239,7 @@ impl UtterClient {
                 println!("{}✓ Ready{}", colors::GREEN, colors::RESET);
                 None
             }
-            WsMessage::Text { content, encrypted, nonce, ephemeral_public_key, .. } => {
+            WsMessage::Text { content, from, timestamp, encrypted, nonce, ephemeral_public_key } => {
                 // ENFORCE ENCRYPTION: Reject plaintext messages
                 if !encrypted.unwrap_or(false) {
                     println!("\r\x1b[K{}✗ Rejected plaintext message{}", colors::RED, colors::RESET);
@@ -272,24 +268,45 @@ impl UtterClient {
                     return None;
                 };
 
-                // Update state with message count and last text
-                let mut state = self.state.lock().await;
-                state.message_count += 1;
-                let display_text = if plaintext.len() > 50 {
-                    format!("{}...", &plaintext[..50])
+                // Calculate time ago
+                let time_ago = if let Some(ts) = timestamp {
+                    use std::time::{SystemTime, UNIX_EPOCH, Duration};
+                    let msg_time = UNIX_EPOCH + Duration::from_millis(ts as u64);
+                    let now = SystemTime::now();
+
+                    if let Ok(elapsed) = now.duration_since(msg_time) {
+                        let secs = elapsed.as_secs();
+                        if secs < 60 {
+                            format!("{}s ago", secs)
+                        } else if secs < 3600 {
+                            format!("{}m ago", secs / 60)
+                        } else {
+                            format!("{}h ago", secs / 3600)
+                        }
+                    } else {
+                        "just now".to_string()
+                    }
+                } else {
+                    "just now".to_string()
+                };
+
+                // Get sender name
+                let sender = from.unwrap_or_else(|| "unknown".to_string());
+
+                // Format display text
+                let display_text = if plaintext.len() > 40 {
+                    format!("{}...", &plaintext[..40])
                 } else {
                     plaintext.clone()
                 };
-                state.last_text = display_text.clone();
-                let count = state.message_count;
-                drop(state);
 
-                // Print message status in place
+                // Print message status in place (single line)
                 use std::io::Write;
-                print!("\r\x1b[K{}Messages:{} {} ({}{}{})",
+                print!("\r\x1b[K{}Last:{} {} {}from {}{}: {}",
                     colors::DIM, colors::RESET,
-                    count,
-                    colors::DIM, display_text, colors::RESET);
+                    time_ago,
+                    colors::DIM, colors::RESET, sender,
+                    display_text);
                 std::io::stdout().flush().unwrap();
 
                 // Simulate typing
