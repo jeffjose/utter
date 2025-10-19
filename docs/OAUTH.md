@@ -49,9 +49,6 @@ This document outlines the implementation plan for Google OAuth authentication a
 │  ┌────────────────────────────────────────┐                │
 │  │ $ utterd                               │                │
 │  │                                        │                │
-│  │ 🔑 No authentication found             │                │
-│  │ Starting Google OAuth...               │                │
-│  │                                        │                │
 │  │ 📱 Please visit:                       │                │
 │  │ https://google.com/device              │                │
 │  │ And enter code: ABCD-EFGH              │                │
@@ -95,11 +92,11 @@ This document outlines the implementation plan for Google OAuth authentication a
 │  │ │  Signed in as: you@gmail.com       │ │                │
 │  │ │                                    │ │                │
 │  │ │  Server URL:                       │ │                │
-│  │ │  [ws://relay.utter.app        ]    │ │                │
+│  │ │  [ws://192.168.1.100:8080     ]    │ │                │
 │  │ │                                    │ │                │
 │  │ │  [Connect]                         │ │                │
 │  │ └────────────────────────────────────┘ │                │
-│  │  (Default server saved for later)      │                │
+│  │  (Server URL saved for next time)      │                │
 │  └────────────────────────────────────────┘                │
 │         ↓                                                    │
 │  ┌────────────────────────────────────────┐                │
@@ -138,9 +135,6 @@ This document outlines the implementation plan for Google OAuth authentication a
 │  Linux Test Client:                                         │
 │  ┌────────────────────────────────────────┐                │
 │  │ $ pnpm start                            │                │
-│  │                                        │                │
-│  │ 🔑 No authentication found             │                │
-│  │ Starting Google OAuth...               │                │
 │  │                                        │                │
 │  │ 📱 Opening browser for sign-in...      │                │
 │  │ Visit: https://accounts.google.com...  │                │
@@ -710,7 +704,7 @@ SignInActivity → ServerSelectionActivity → DeviceSelectionActivity → Voice
 - Auto-skip if already signed in
 
 **Screen 2: ServerSelectionActivity** - Relay server configuration
-- Input field for server URL (default: `ws://relay.utter.app`)
+- Input field for server URL (e.g., `ws://192.168.1.100:8080` or `ws://your-server.com:8080`)
 - Saved in SharedPreferences for future use
 - "Connect" button establishes WebSocket connection
 - Shows connection status
