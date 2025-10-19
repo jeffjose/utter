@@ -2,7 +2,6 @@ import { WebSocketServer, WebSocket } from 'ws';
 import * as dotenv from 'dotenv';
 import * as os from 'os';
 import * as path from 'path';
-import { verifyGoogleToken } from './auth';
 
 // Load environment from root .env file
 dotenv.config({ path: path.join(__dirname, '../../.env') });
@@ -43,7 +42,7 @@ const clients = new Map<string, Client>();
 interface Device {
   deviceId: string;
   deviceName: string;
-  deviceType: 'android' | 'target';
+  deviceType: 'android' | 'target' | 'controller';
   userId: string;
   publicKey?: string;
   status: 'online' | 'offline';
@@ -161,7 +160,7 @@ wss.on('connection', (ws: WebSocket) => {
   }));
 });
 
-async function handleRegister(client: Client, message: any) {
+function handleRegister(client: Client, message: any) {
   // Validate public key if provided
   if (message.publicKey) {
     try {
@@ -189,27 +188,9 @@ async function handleRegister(client: Client, message: any) {
   client.platform = message.platform;
   client.arch = message.arch;
 
-  // OAuth authentication (required)
-  if (!message.token) {
-    client.ws.send(JSON.stringify({
-      type: 'error',
-      message: 'OAuth token required. Please sign in with Google.',
-      timestamp: Date.now()
-    }));
-    return;
-  }
-
-  try {
-    const userInfo = await verifyGoogleToken(message.token);
-    client.userId = userInfo.email;
-  } catch (err: any) {
-    console.error(`${colors.dim}[${client.id}]${colors.reset} ${colors.red}✗${colors.reset} OAuth failed:`, err.message);
-    client.ws.send(JSON.stringify({
-      type: 'error',
-      message: 'OAuth verification failed. Please sign in again.',
-      timestamp: Date.now()
-    }));
-    return;
+  // Accept userId from client if provided (no verification - relay server is user-agnostic)
+  if (message.userId) {
+    client.userId = message.userId;
   }
 
   const typeColor = client.type === 'target' ? colors.blue : client.type === 'android' ? colors.magenta : client.type === 'controller' ? colors.cyan : colors.gray;
