@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import * as dotenv from 'dotenv';
 import * as os from 'os';
+import { ed25519 } from '@noble/curves/ed25519';
 
 dotenv.config();
 
@@ -148,11 +149,36 @@ wss.on('connection', (ws: WebSocket) => {
 });
 
 function handleRegister(client: Client, message: any) {
+  // Validate public key if provided
+  if (message.publicKey) {
+    try {
+      const keyBytes = Buffer.from(message.publicKey, 'base64');
+      if (keyBytes.length !== 32) {
+        throw new Error('Invalid Ed25519 public key length');
+      }
+      // Verify it's a valid Ed25519 public key by attempting to use it
+      ed25519.getPublicKey(new Uint8Array(32)); // Just to ensure library is working
+      client.publicKey = message.publicKey;
+      console.log(`[${client.id}] Public key validated and stored`);
+    } catch (err) {
+      console.error(`[${client.id}] Invalid public key:`, err);
+      client.ws.send(JSON.stringify({
+        type: 'error',
+        message: 'Invalid public key format. Must be base64-encoded Ed25519 key (32 bytes)',
+        timestamp: Date.now()
+      }));
+      return;
+    }
+  }
+
   client.type = message.clientType || 'unknown';
   client.deviceId = message.deviceId || client.id;
   client.deviceName = message.deviceName || `${client.type}-${client.id}`;
-  client.userId = message.userId || 'test-user'; // TODO: Get from OAuth token
-  client.publicKey = message.publicKey;
+
+  // TODO Phase 6: Replace with OAuth verification
+  // const userInfo = await verifyGoogleToken(message.token);
+  // client.userId = userInfo.email;
+  client.userId = message.userId || 'test-user';
 
   console.log(`[${client.id}] Registered as ${client.type} (device: ${client.deviceId}, name: ${client.deviceName})`);
 
@@ -229,14 +255,23 @@ function handleMessage(sender: Client, message: any) {
     return;
   }
 
-  // Forward message to target
-  console.log(`[${sender.id}] → [${targetClient.id}]`);
-  targetClient.ws.send(JSON.stringify({
+  // Forward message to target (including encryption fields if present)
+  console.log(`[${sender.id}] → [${targetClient.id}] ${message.encrypted ? '(encrypted)' : '(plaintext)'}`);
+  const forwardedMessage: any = {
     type: 'text',
     content: content,
     from: sender.deviceId || sender.id,
     timestamp: message.timestamp || Date.now()
-  }));
+  };
+
+  // Forward E2E encryption fields if present
+  if (message.encrypted) {
+    forwardedMessage.encrypted = true;
+    forwardedMessage.nonce = message.nonce;
+    forwardedMessage.ephemeralPublicKey = message.ephemeralPublicKey;
+  }
+
+  targetClient.ws.send(JSON.stringify(forwardedMessage));
 
   // Send acknowledgment to sender
   sender.ws.send(JSON.stringify({
