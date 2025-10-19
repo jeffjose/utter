@@ -2,7 +2,7 @@ use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
-use ed25519_dalek::VerifyingKey;
+use base64::{Engine as _, engine::general_purpose};
 use hkdf::Hkdf;
 use rand::RngCore;
 use sha2::Sha256;
@@ -52,20 +52,17 @@ impl MessageEncryption {
         plaintext: &str,
         recipient_public_key_base64: &str,
     ) -> Result<EncryptedMessage, Box<dyn std::error::Error>> {
-        println!("[Crypto] Encrypting message ({} chars)", plaintext.len());
-
         // 1. Generate ephemeral X25519 keypair
         let ephemeral_secret = StaticSecret::random_from_rng(OsRng);
         let ephemeral_public = X25519PublicKey::from(&ephemeral_secret);
 
         // 2. Decode recipient's public key
-        let recipient_bytes = base64::decode(recipient_public_key_base64)?;
+        let recipient_bytes = general_purpose::STANDARD.decode(recipient_public_key_base64)?;
         if recipient_bytes.len() != 32 {
             return Err("Invalid recipient public key length".into());
         }
 
-        // Convert Ed25519 public key to X25519 (Curve25519)
-        // For demonstration, use the bytes directly (proper conversion needed in production)
+        // Recipient's X25519 public key
         let recipient_x25519 = X25519PublicKey::from(
             <[u8; 32]>::try_from(recipient_bytes.as_slice())?
         );
@@ -79,6 +76,7 @@ impl MessageEncryption {
         // 5. Generate random nonce (12 bytes for AES-GCM)
         let mut nonce_bytes = [0u8; 12];
         OsRng.fill_bytes(&mut nonce_bytes);
+        #[allow(deprecated)]
         let nonce = Nonce::from_slice(&nonce_bytes);
 
         // 6. Encrypt with AES-256-GCM
@@ -87,12 +85,10 @@ impl MessageEncryption {
             .encrypt(nonce, plaintext.as_bytes())
             .map_err(|e| format!("Encryption failed: {:?}", e))?;
 
-        println!("[Crypto] Message encrypted successfully");
-
         Ok(EncryptedMessage {
-            ciphertext: base64::encode(&ciphertext),
-            nonce: base64::encode(&nonce_bytes),
-            ephemeral_public_key: base64::encode(ephemeral_public.as_bytes()),
+            ciphertext: general_purpose::STANDARD.encode(&ciphertext),
+            nonce: general_purpose::STANDARD.encode(&nonce_bytes),
+            ephemeral_public_key: general_purpose::STANDARD.encode(ephemeral_public.as_bytes()),
         })
     }
 
@@ -109,10 +105,8 @@ impl MessageEncryption {
         encrypted: &EncryptedMessage,
         _sender_public_key_base64: &str,
     ) -> Result<String, Box<dyn std::error::Error>> {
-        println!("[Crypto] Decrypting message");
-
         // 1. Decode sender's ephemeral public key
-        let sender_ephemeral_bytes = base64::decode(&encrypted.ephemeral_public_key)?;
+        let sender_ephemeral_bytes = general_purpose::STANDARD.decode(&encrypted.ephemeral_public_key)?;
         if sender_ephemeral_bytes.len() != 32 {
             return Err("Invalid ephemeral public key length".into());
         }
@@ -131,13 +125,14 @@ impl MessageEncryption {
         let aes_key = self.derive_aes_key(shared_secret.as_bytes())?;
 
         // 5. Decode ciphertext and nonce
-        let ciphertext = base64::decode(&encrypted.ciphertext)?;
-        let nonce_bytes = base64::decode(&encrypted.nonce)?;
+        let ciphertext = general_purpose::STANDARD.decode(&encrypted.ciphertext)?;
+        let nonce_bytes = general_purpose::STANDARD.decode(&encrypted.nonce)?;
 
         if nonce_bytes.len() != 12 {
             return Err("Invalid nonce length".into());
         }
 
+        #[allow(deprecated)]
         let nonce = Nonce::from_slice(&nonce_bytes);
 
         // 6. Decrypt with AES-256-GCM
@@ -145,8 +140,6 @@ impl MessageEncryption {
         let plaintext = cipher
             .decrypt(nonce, ciphertext.as_ref())
             .map_err(|e| format!("Decryption failed: {:?}", e))?;
-
-        println!("[Crypto] Message decrypted successfully");
 
         Ok(String::from_utf8(plaintext)?)
     }

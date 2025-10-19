@@ -1,15 +1,16 @@
-use ed25519_dalek::{SigningKey, VerifyingKey};
+use base64::{Engine as _, engine::general_purpose};
 use rand::rngs::OsRng;
 use std::fs;
 use std::path::PathBuf;
+use x25519_dalek::{PublicKey, StaticSecret};
 
-/// Manages Ed25519 keypairs for E2E encryption
+/// Manages X25519 keypairs for E2E encryption
 ///
 /// Keys are stored in ~/.config/utterd/keypair.key
 pub struct KeyManager {
     config_dir: PathBuf,
-    signing_key: Option<SigningKey>,
-    verifying_key: Option<VerifyingKey>,
+    private_key: Option<StaticSecret>,
+    public_key: Option<PublicKey>,
 }
 
 impl KeyManager {
@@ -24,12 +25,12 @@ impl KeyManager {
 
         Ok(Self {
             config_dir,
-            signing_key: None,
-            verifying_key: None,
+            private_key: None,
+            public_key: None,
         })
     }
 
-    /// Get or generate Ed25519 keypair
+    /// Get or generate X25519 keypair
     pub fn get_or_generate_keypair(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let key_path = self.config_dir.join("keypair.key");
 
@@ -37,21 +38,20 @@ impl KeyManager {
             println!("[Crypto] Loading existing keypair from {:?}", key_path);
             self.load_keypair(&key_path)?;
         } else {
-            println!("[Crypto] Generating new Ed25519 keypair");
+            println!("[Crypto] Generating new X25519 keypair");
             self.generate_and_save_keypair(&key_path)?;
         }
 
         Ok(())
     }
 
-    /// Generate new Ed25519 keypair and save to file
+    /// Generate new X25519 keypair and save to file
     fn generate_and_save_keypair(&mut self, path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-        let mut csprng = OsRng;
-        let signing_key = SigningKey::generate(&mut csprng);
-        let verifying_key = signing_key.verifying_key();
+        let private_key = StaticSecret::random_from_rng(OsRng);
+        let public_key = PublicKey::from(&private_key);
 
         // Save private key to file
-        fs::write(path, signing_key.to_bytes())?;
+        fs::write(path, private_key.to_bytes())?;
 
         // Set restrictive permissions (Unix only)
         #[cfg(unix)]
@@ -64,8 +64,8 @@ impl KeyManager {
 
         println!("[Crypto] Keypair generated and saved to {:?}", path);
 
-        self.signing_key = Some(signing_key);
-        self.verifying_key = Some(verifying_key);
+        self.private_key = Some(private_key);
+        self.public_key = Some(public_key);
 
         Ok(())
     }
@@ -81,40 +81,40 @@ impl KeyManager {
         let key_array: [u8; 32] = key_bytes.try_into()
             .map_err(|_| "Failed to convert key bytes to array")?;
 
-        let signing_key = SigningKey::from_bytes(&key_array);
-        let verifying_key = signing_key.verifying_key();
+        let private_key = StaticSecret::from(key_array);
+        let public_key = PublicKey::from(&private_key);
 
-        self.signing_key = Some(signing_key);
-        self.verifying_key = Some(verifying_key);
+        self.private_key = Some(private_key);
+        self.public_key = Some(public_key);
 
         Ok(())
     }
 
     /// Get the public key in base64 format
     pub fn get_public_key_base64(&self) -> Result<String, Box<dyn std::error::Error>> {
-        let verifying_key = self.verifying_key
+        let public_key = self.public_key
             .as_ref()
             .ok_or("No keypair loaded. Call get_or_generate_keypair() first.")?;
 
-        Ok(base64::encode(verifying_key.as_bytes()))
+        Ok(general_purpose::STANDARD.encode(public_key.as_bytes()))
     }
 
     /// Get the private key bytes
-    pub fn get_private_key_bytes(&self) -> Result<&[u8; 32], Box<dyn std::error::Error>> {
-        let signing_key = self.signing_key
+    pub fn get_private_key_bytes(&self) -> Result<[u8; 32], Box<dyn std::error::Error>> {
+        let private_key = self.private_key
             .as_ref()
             .ok_or("No keypair loaded")?;
 
-        Ok(signing_key.as_bytes())
+        Ok(private_key.to_bytes())
     }
 
     /// Get the public key bytes
-    pub fn get_public_key_bytes(&self) -> Result<&[u8; 32], Box<dyn std::error::Error>> {
-        let verifying_key = self.verifying_key
+    pub fn get_public_key_bytes(&self) -> Result<[u8; 32], Box<dyn std::error::Error>> {
+        let public_key = self.public_key
             .as_ref()
             .ok_or("No keypair loaded")?;
 
-        Ok(verifying_key.as_bytes())
+        Ok(*public_key.as_bytes())
     }
 
     /// Clear all stored keys (delete key file)

@@ -1,11 +1,19 @@
-import { ed25519 } from '@noble/curves/ed25519.js';
+import { x25519 } from '@noble/curves/ed25519.js';
 import { randomBytes } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+// ANSI color codes
+const colors = {
+  reset: '\x1b[0m',
+  dim: '\x1b[2m',
+  green: '\x1b[32m',
+  cyan: '\x1b[36m',
+};
+
 /**
- * Manages Ed25519 keypairs for E2E encryption
+ * Manages X25519 keypairs for E2E encryption
  */
 export class KeyManager {
   private privateKey: Uint8Array | null = null;
@@ -22,26 +30,25 @@ export class KeyManager {
   }
 
   /**
-   * Get or generate Ed25519 keypair
+   * Get or generate X25519 keypair
    */
   public getOrGenerateKeyPair(): void {
     if (fs.existsSync(this.keyPath)) {
-      console.log('[Crypto] Loading existing keypair');
       this.loadKeyPair();
     } else {
-      console.log('[Crypto] Generating new Ed25519 keypair');
+      console.log(`${colors.cyan}🔑 Generating new keypair${colors.reset}`);
       this.generateAndSaveKeyPair();
     }
   }
 
   /**
-   * Generate new Ed25519 keypair and save to file
+   * Generate new X25519 keypair and save to file
    */
   private generateAndSaveKeyPair(): void {
-    // Generate Ed25519 keypair
+    // Generate X25519 keypair
     const privateKeyBytes = randomBytes(32);
     this.privateKey = new Uint8Array(privateKeyBytes);
-    this.publicKey = ed25519.getPublicKey(this.privateKey);
+    this.publicKey = x25519.getPublicKey(this.privateKey);
 
     // Save private key to file
     fs.writeFileSync(this.keyPath, Buffer.from(this.privateKey));
@@ -50,8 +57,6 @@ export class KeyManager {
     if (process.platform !== 'win32') {
       fs.chmodSync(this.keyPath, 0o600); // rw------- (owner only)
     }
-
-    console.log('[Crypto] Keypair generated and saved to', this.keyPath);
   }
 
   /**
@@ -65,7 +70,7 @@ export class KeyManager {
     }
 
     this.privateKey = new Uint8Array(keyBytes);
-    this.publicKey = ed25519.getPublicKey(this.privateKey);
+    this.publicKey = x25519.getPublicKey(this.privateKey);
   }
 
   /**
@@ -104,7 +109,7 @@ export class KeyManager {
   public clearKeys(): void {
     if (fs.existsSync(this.keyPath)) {
       fs.unlinkSync(this.keyPath);
-      console.log('[Crypto] Keys cleared');
+      console.log(`${colors.green}✓ Keys cleared${colors.reset}`);
     }
     this.privateKey = null;
     this.publicKey = null;

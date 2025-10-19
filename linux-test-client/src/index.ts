@@ -3,7 +3,42 @@
 import WebSocket from 'ws';
 import * as readline from 'readline';
 import * as os from 'os';
+import * as fs from 'fs';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
 import { KeyManager, MessageEncryption } from './crypto/index.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Read version from package.json
+const packageJson = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf-8')
+);
+const VERSION = packageJson.version;
+
+function getPlatformInfo(): string {
+  const platform = os.platform();
+  const release = os.release();
+
+  if (platform === 'linux') {
+    // Try to read /etc/os-release for distro info
+    try {
+      const osRelease = fs.readFileSync('/etc/os-release', 'utf-8');
+      const match = osRelease.match(/PRETTY_NAME="([^"]+)"/);
+      if (match) return match[1];
+    } catch (e) {
+      // Fallback to generic Linux
+    }
+    return `Linux ${release}`;
+  } else if (platform === 'darwin') {
+    return `macOS ${release}`;
+  } else if (platform === 'win32') {
+    return `Windows ${release}`;
+  }
+
+  return `${platform} ${release}`;
+}
 
 interface Device {
   deviceId: string;
@@ -55,8 +90,6 @@ class TestClient {
       this.keyManager.getPublicKeyBytes()
     );
 
-    console.log('[Crypto] E2E encryption enabled\n');
-
     this.rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
@@ -70,7 +103,7 @@ class TestClient {
       this.ws = new WebSocket(this.serverUrl);
 
       this.ws.on('open', () => {
-        process.stdout.write(`\r\x1b[K${colors.green}✓ Connected${colors.reset}\n`);
+        process.stdout.write(`\r\x1b[K`);
         this.connected = true;
         this.reconnectAttempts = 0;
         this.updatePrompt(); // Update prompt to show connected state
@@ -110,14 +143,16 @@ class TestClient {
 
   private register(): void {
     const publicKey = this.keyManager.getPublicKeyBase64();
-    console.log('[Crypto] Including public key in registration');
 
     const registerMsg = {
       type: 'register',
       clientType: 'controller',
       deviceId: this.deviceId,
       deviceName: this.deviceName,
-      publicKey
+      publicKey,
+      version: `linux-test-client v${VERSION}`,
+      platform: getPlatformInfo(),
+      arch: os.arch()
     };
 
     this.send(registerMsg);
@@ -133,7 +168,6 @@ class TestClient {
           break;
 
         case 'registered':
-          console.log(`${colors.green}✓ Registered${colors.reset}`);
           this.fetchDevices(); // Auto-refresh device list on registration
           break;
 
@@ -170,7 +204,7 @@ class TestClient {
   }
 
   private handleDeviceList(devices: Device[]): void {
-    this.devices = devices.filter(d => d.deviceType === 'linux');
+    this.devices = devices.filter(d => d.deviceType === 'target');
 
     // Validate current target still exists
     if (this.targetDevice && !this.devices.find(d => d.deviceId === this.targetDevice)) {
@@ -184,10 +218,10 @@ class TestClient {
       this.devices.forEach((device, idx) => {
         const statusIcon = device.status === 'online' ? `${colors.green}●${colors.reset}` : `${colors.gray}○${colors.reset}`;
         const isTarget = device.deviceId === this.targetDevice ? ` ${colors.green}(selected)${colors.reset}` : '';
-        const encryptIcon = device.publicKey ? '🔒' : '🔓';
-        console.log(`  ${colors.cyan}${idx + 1}.${colors.reset} ${device.deviceName} ${statusIcon} ${encryptIcon}${isTarget}`);
+        const compatNote = device.publicKey ? '' : ` ${colors.red}✗ (no encryption)${colors.reset}`;
+        console.log(`  ${colors.cyan}${idx + 1}.${colors.reset} ${device.deviceName} ${statusIcon}${compatNote}${isTarget}`);
       });
-      console.log(`${colors.gray}Type /device <number> to select • 🔒 = encrypted • 🔓 = plaintext only${colors.reset}\n`);
+      console.log(`${colors.gray}/device <number> to select${colors.reset}\n`);
     } else {
       console.log(`${colors.yellow}No devices found${colors.reset}\n`);
     }
@@ -259,7 +293,7 @@ class TestClient {
       };
 
       this.send(msg);
-      console.log(`${colors.green}✓ 🔒 Sent (encrypted)${colors.reset}`);
+      console.log(`${colors.green}✓ Sent${colors.reset}`);
     } catch (error) {
       console.log(`${colors.red}✗ Encryption failed: ${error instanceof Error ? error.message : String(error)}${colors.reset}`);
     }
@@ -331,17 +365,17 @@ Commands:
 
 Usage:
   1. Connect to server (automatic on start)
-  2. Use /device <number> to select a Linux device
+  2. Use /device <number> to select a target device
   3. Your prompt will change to show the selected device
-  4. Type any message and press Enter to send (encrypted)
+  4. Type any message and press Enter to send
 
 Examples:
   /device 1          Select device #1 (prompt changes to "Work Laptop>")
-  Work Laptop> Hello world    Send encrypted "Hello world" to Work Laptop
+  Work Laptop> Hello world    Send "Hello world" to Work Laptop
 
 Security:
-  🔒 All messages are encrypted end-to-end
-  🔓 Devices without encryption support cannot receive messages
+  🔒 All messages are encrypted end-to-end (required)
+  Devices without encryption support cannot receive messages
 `);
   }
 
@@ -359,8 +393,6 @@ Security:
   }
 
   startREPL(): void {
-    console.log(`${colors.gray}Type /help for commands${colors.reset}\n`);
-
     this.updatePrompt();
 
     this.rl.on('line', (input: string) => {

@@ -23,7 +23,7 @@ const colors = {
 interface Client {
   ws: WebSocket;
   id: string;
-  type: 'android' | 'linux' | 'controller' | 'unknown';
+  type: 'android' | 'target' | 'controller' | 'unknown';
   deviceId?: string;
   deviceName?: string;
   userId?: string;
@@ -40,7 +40,7 @@ const clients = new Map<string, Client>();
 interface Device {
   deviceId: string;
   deviceName: string;
-  deviceType: 'android' | 'linux';
+  deviceType: 'android' | 'target';
   userId: string;
   publicKey?: string;
   status: 'online' | 'offline';
@@ -95,8 +95,6 @@ console.log('');
 wss.on('connection', (ws: WebSocket) => {
   const clientId = generateId();
 
-  console.log(`${colors.dim}[${clientId}]${colors.reset} ${colors.green}●${colors.reset} Connected`);
-
   const client: Client = {
     ws,
     id: clientId,
@@ -142,7 +140,8 @@ wss.on('connection', (ws: WebSocket) => {
   });
 
   ws.on('close', () => {
-    console.log(`${colors.dim}[${clientId}]${colors.reset} ${colors.red}●${colors.reset} Disconnected`);
+    const name = client.deviceName || client.deviceId || clientId;
+    console.log(`${colors.dim}[${clientId}]${colors.reset} ${colors.red}●${colors.reset} ${colors.red}DOWN${colors.reset} ${colors.dim}${name}${colors.reset}`);
     clients.delete(clientId);
   });
 
@@ -169,7 +168,6 @@ function handleRegister(client: Client, message: any) {
       }
       // Store the validated key
       client.publicKey = message.publicKey;
-      console.log(`${colors.dim}[${client.id}]${colors.reset} ${colors.green}🔑${colors.reset} Public key validated`);
     } catch (err) {
       console.error(`${colors.dim}[${client.id}]${colors.reset} ${colors.red}✗${colors.reset} Invalid public key:`, err);
       client.ws.send(JSON.stringify({
@@ -193,7 +191,7 @@ function handleRegister(client: Client, message: any) {
   // client.userId = userInfo.email;
   client.userId = message.userId || 'test-user';
 
-  const typeColor = client.type === 'linux' ? colors.blue : client.type === 'android' ? colors.magenta : client.type === 'controller' ? colors.cyan : colors.gray;
+  const typeColor = client.type === 'target' ? colors.blue : client.type === 'android' ? colors.magenta : client.type === 'controller' ? colors.cyan : colors.gray;
 
   // Build metadata string
   const metadata = [];
@@ -202,7 +200,7 @@ function handleRegister(client: Client, message: any) {
   if (client.arch) metadata.push(client.arch);
   const metaStr = metadata.length > 0 ? ` ${colors.dim}• ${metadata.join(' • ')}${colors.reset}` : '';
 
-  console.log(`${colors.dim}[${client.id}]${colors.reset} Registered: ${colors.bright}${client.deviceName}${colors.reset} ${colors.dim}(${typeColor}${client.type}${colors.reset}${colors.dim})${colors.reset}${metaStr}`);
+  console.log(`${colors.dim}[${client.id}]${colors.reset} ${colors.green}●${colors.reset} ${colors.green}UP${colors.reset} ${colors.bright}${client.deviceName}${colors.reset} ${colors.dim}(${typeColor}${client.type}${colors.reset}${colors.dim})${colors.reset}${metaStr}`);
 
   client.ws.send(JSON.stringify({
     type: 'registered',
@@ -222,7 +220,7 @@ function handleGetDevices(client: Client) {
       devices.push({
         deviceId: c.deviceId,
         deviceName: c.deviceName || c.deviceId,
-        deviceType: c.type as 'android' | 'linux',
+        deviceType: c.type as 'android' | 'target',
         userId: c.userId || 'test-user',
         publicKey: c.publicKey,
         status: c.status,
@@ -288,11 +286,8 @@ function handleMessage(sender: Client, message: any) {
     return;
   }
 
-  // Forward message to target (including encryption fields if present)
-  const encStatus = message.encrypted
-    ? `${colors.green}🔒 encrypted${colors.reset}`
-    : `${colors.dim}plaintext${colors.reset}`;
-  console.log(`${colors.dim}[${sender.id}]${colors.reset} ${colors.cyan}→${colors.reset} ${colors.dim}[${targetClient.id}]${colors.reset} ${encStatus}`);
+  // Forward message to target
+  console.log(`${colors.dim}[${sender.id}]${colors.reset} ${colors.cyan}→${colors.reset} ${colors.dim}[${targetClient.id}]${colors.reset}`);
   const forwardedMessage: any = {
     type: 'text',
     content: content,

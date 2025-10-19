@@ -27,6 +27,20 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+// ANSI color codes
+mod colors {
+    pub const RESET: &str = "\x1b[0m";
+    pub const BRIGHT: &str = "\x1b[1m";
+    pub const DIM: &str = "\x1b[2m";
+    pub const RED: &str = "\x1b[31m";
+    pub const GREEN: &str = "\x1b[32m";
+    pub const YELLOW: &str = "\x1b[33m";
+    pub const BLUE: &str = "\x1b[34m";
+    pub const MAGENTA: &str = "\x1b[35m";
+    pub const CYAN: &str = "\x1b[36m";
+    pub const GRAY: &str = "\x1b[90m";
+}
+
 fn get_hostname() -> String {
     hostname::get()
         .ok()
@@ -134,8 +148,8 @@ struct UtterClient {
     server_url: String,
     use_ydotool: bool,
     state: Arc<Mutex<AppState>>,
-    key_manager: Option<KeyManager>,
-    message_encryption: Option<MessageEncryption>,
+    key_manager: Option<Arc<KeyManager>>,
+    message_encryption: Option<Arc<MessageEncryption>>,
 }
 
 impl UtterClient {
@@ -152,29 +166,37 @@ impl UtterClient {
         )));
 
         // Initialize crypto
-        let mut key_manager = KeyManager::new().ok();
-        let message_encryption = if let Some(ref mut km) = key_manager {
-            if let Err(e) = km.get_or_generate_keypair() {
-                eprintln!("[Crypto] Failed to initialize keypair: {}", e);
-                None
-            } else {
-                // Create MessageEncryption
-                if let (Ok(priv_key), Ok(pub_key)) =
-                    (km.get_private_key_bytes(), km.get_public_key_bytes()) {
-                    Some(MessageEncryption::new(priv_key, pub_key))
-                } else {
-                    None
+        let (key_manager, message_encryption) = match KeyManager::new() {
+            Ok(mut km) => {
+                match km.get_or_generate_keypair() {
+                    Ok(_) => {
+                        // Create MessageEncryption
+                        match (km.get_private_key_bytes(), km.get_public_key_bytes()) {
+                            (Ok(priv_key), Ok(pub_key)) => {
+                                let enc = MessageEncryption::new(&priv_key, &pub_key);
+                                println!("{}🔒 E2E encryption enabled{}", colors::GREEN, colors::RESET);
+                                (Some(Arc::new(km)), Some(Arc::new(enc)))
+                            }
+                            _ => {
+                                println!("{}🔓 E2E encryption disabled (key retrieval failed){}",
+                                    colors::YELLOW, colors::RESET);
+                                (None, None)
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("{}{}✗{} Failed to initialize keypair: {}",
+                            colors::DIM, colors::RED, colors::RESET, e);
+                        (None, None)
+                    }
                 }
             }
-        } else {
-            None
+            Err(e) => {
+                eprintln!("{}{}✗{} Failed to create KeyManager: {}",
+                    colors::DIM, colors::RED, colors::RESET, e);
+                (None, None)
+            }
         };
-
-        if message_encryption.is_some() {
-            println!("[Crypto] E2E encryption enabled");
-        } else {
-            println!("[Crypto] E2E encryption disabled (running in plaintext mode)");
-        }
 
         Self {
             server_url,
@@ -232,12 +254,9 @@ impl UtterClient {
                     None
                 };
 
-                if public_key.is_some() {
-                    println!("[Crypto] Including public key in registration");
-                }
 
                 Some(WsMessage::Register {
-                    client_type: "linux".to_string(),
+                    client_type: "target".to_string(),
                     device_id: hostname.clone(),
                     device_name: hostname,
                     public_key,
@@ -257,7 +276,6 @@ impl UtterClient {
                 if !encrypted.unwrap_or(false) {
                     let err_msg = "REJECTED: Plaintext messages not allowed. E2E encryption is REQUIRED.";
                     state.last_error = err_msg.to_string();
-                    eprintln!("[Crypto] {}", err_msg);
                     return None;
                 }
 
@@ -272,20 +290,15 @@ impl UtterClient {
                     };
 
                     match enc.decrypt(&encrypted_msg, "") {
-                        Ok(plaintext) => {
-                            println!("[Crypto] Message decrypted successfully");
-                            plaintext
-                        }
+                        Ok(plaintext) => plaintext,
                         Err(e) => {
                             let err_msg = format!("Decryption failed: {}", e);
                             state.last_error = err_msg.clone();
-                            eprintln!("[Crypto] {}", err_msg);
                             return None;
                         }
                     }
                 } else {
                     state.last_error = "Received encrypted message but crypto not initialized".to_string();
-                    eprintln!("[Crypto] {}", state.last_error);
                     return None;
                 };
 
@@ -545,7 +558,7 @@ impl UtterClient {
         execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
         terminal.show_cursor()?;
 
-        println!("\nShutdown complete");
+        println!("\n{}✓ Shutdown complete{}", colors::GREEN, colors::RESET);
 
         Ok(())
     }
@@ -553,12 +566,25 @@ impl UtterClient {
     async fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
         if !self.check_dependencies() {
             let tool = if self.use_ydotool { "ydotool" } else { "xdotool" };
-            eprintln!("✗ {} not found", tool);
-            eprintln!("\nPlease install {}", tool);
-            eprintln!("\nInstall command:");
-            eprintln!("  sudo apt install {}", tool);
+            eprintln!("\n{}✗ {} not found{}", colors::RED, tool, colors::RESET);
+            eprintln!("\n{}Please install {}{}", colors::YELLOW, tool, colors::RESET);
+            eprintln!("\n{}Install command:{}", colors::DIM, colors::RESET);
+            eprintln!("  {}sudo apt install {}{}", colors::CYAN, tool, colors::RESET);
             return Ok(());
         }
+
+        // Print startup banner
+        println!();
+        println!("{}{}🎤 utterd{} {}v{}{}",
+            colors::BRIGHT, colors::CYAN, colors::RESET, colors::DIM, VERSION, colors::RESET);
+        println!("{}{}{}", colors::GRAY, "─".repeat(60), colors::RESET);
+        let hostname = get_hostname();
+        println!("{}Device:{} {}", colors::DIM, colors::RESET, hostname);
+        println!("{}Server:{} {}", colors::DIM, colors::RESET, self.server_url);
+        let tool = if self.use_ydotool { "ydotool" } else { "xdotool" };
+        println!("{}Tool:{} {}", colors::DIM, colors::RESET, tool);
+        println!("{}{}{}", colors::GRAY, "─".repeat(60), colors::RESET);
+        println!();
 
         self.run_with_display().await
     }
@@ -570,8 +596,8 @@ impl Clone for UtterClient {
             server_url: self.server_url.clone(),
             use_ydotool: self.use_ydotool,
             state: self.state.clone(),
-            key_manager: None,  // Crypto not cloned - each instance should have its own
-            message_encryption: None,
+            key_manager: self.key_manager.clone(),
+            message_encryption: self.message_encryption.clone(),
         }
     }
 }

@@ -35,12 +35,10 @@ export class MessageEncryption {
    * Encrypt a plaintext message for a specific recipient
    *
    * @param plaintext The message to encrypt
-   * @param recipientPublicKeyBase64 The recipient's Ed25519 public key (base64)
+   * @param recipientPublicKeyBase64 The recipient's X25519 public key (base64)
    * @returns EncryptedMessage containing ciphertext, nonce, and ephemeral public key
    */
   public encrypt(plaintext: string, recipientPublicKeyBase64: string): EncryptedMessage {
-    console.log(`[Crypto] Encrypting message (${plaintext.length} chars)`);
-
     // 1. Generate ephemeral X25519 keypair
     const ephemeralPrivate = randomBytes(32);
     const ephemeralPublic = x25519.getPublicKey(ephemeralPrivate);
@@ -51,8 +49,7 @@ export class MessageEncryption {
       throw new Error('Invalid recipient public key length');
     }
 
-    // Convert Ed25519 public key to X25519 (Curve25519)
-    // For simplicity, use the bytes directly (proper conversion in production)
+    // Recipient's X25519 public key
     const recipientX25519 = new Uint8Array(recipientBytes);
 
     // 3. Perform ECDH to get shared secret
@@ -75,8 +72,6 @@ export class MessageEncryption {
     // Combine ciphertext and authentication tag
     const ciphertextWithTag = Buffer.concat([ciphertext, tag]);
 
-    console.log('[Crypto] Message encrypted successfully');
-
     return {
       ciphertext: ciphertextWithTag.toString('base64'),
       nonce: nonce.toString('base64'),
@@ -92,8 +87,6 @@ export class MessageEncryption {
    * @returns Decrypted plaintext message
    */
   public decrypt(encrypted: EncryptedMessage, senderPublicKeyBase64: string): string {
-    console.log('[Crypto] Decrypting message');
-
     // 1. Decode sender's ephemeral public key
     const senderEphemeralBytes = Buffer.from(encrypted.ephemeralPublicKey, 'base64');
     if (senderEphemeralBytes.length !== 32) {
@@ -132,8 +125,6 @@ export class MessageEncryption {
       decipher.update(ciphertext),
       decipher.final()
     ]);
-
-    console.log('[Crypto] Message decrypted successfully');
 
     return plaintext.toString('utf8');
   }
