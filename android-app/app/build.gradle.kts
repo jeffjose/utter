@@ -32,7 +32,9 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // Inject environment variables into BuildConfig
-        buildConfigField("String", "GOOGLE_CLIENT_ID", "\"${envProperties.getProperty("GOOGLE_ANDROID_CLIENT_ID")}\"")
+        // Note: Use web client ID for requestIdToken(), not Android client ID
+        // Android credentials (package + SHA-1) are used automatically by Google Play Services
+        buildConfigField("String", "GOOGLE_CLIENT_ID", "\"${envProperties.getProperty("GOOGLE_CLIENT_ID")}\"")
         buildConfigField("String", "SERVER_URL", "\"${envProperties.getProperty("SERVER_URL", "ws://localhost:8080")}\"")
     }
 
