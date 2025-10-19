@@ -1,4 +1,4 @@
-#!/usr/bin/env -S uv run
+#!/usr/bin/env -S uv run --script
 # /// script
 # dependencies = [
 #   "websockets>=12.0",
@@ -7,7 +7,7 @@
 # requires-python = ">=3.9"
 # ///
 """
-Utter Linux Client - Receives text from Android and simulates keyboard input
+utterd - Receives text from Android and simulates keyboard input on Linux
 """
 import asyncio
 import json
@@ -133,7 +133,7 @@ class UtterClient:
             table.add_row("Error:", Text(self.last_error, style="bold red"))
 
         # Create panel
-        title = "🎤 Utter Linux Client"
+        title = "🎤 utterd"
         if self.status == "Registered - Ready":
             subtitle = "Waiting for voice input from Android..."
         else:
@@ -271,7 +271,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Utter Linux Client - Voice dictation from Android",
+        description="utterd - Voice dictation from Android to Linux",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

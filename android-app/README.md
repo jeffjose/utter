@@ -126,8 +126,8 @@ private val AUTO_SEND_DELAY = 2000L  // Auto-send after 2 seconds
 
 2. Start Linux client:
    ```bash
-   cd linux-client
-   python utter_client.py
+   cd utterd
+   python utterd
    ```
 
 3. Find your computer's local IP:

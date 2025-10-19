@@ -37,8 +37,8 @@ Server will start on `ws://localhost:8080`.
 ### 2. Start the Linux Client
 
 ```bash
-cd linux-client
-uv run utter_client.py
+cd utterd
+uv run utterd
 ```
 
 ### 3. Set Up Android App
@@ -67,8 +67,8 @@ utter/
 │   │   └── index.ts
 │   ├── package.json
 │   └── README.md
-├── linux-client/               # Python client (uses inline deps)
-│   ├── utter_client.py
+├── utterd/                     # Python client (uses inline deps)
+│   ├── utterd
 │   └── README.md
 └── README.md                   # This file
 ```
@@ -150,14 +150,14 @@ Phase 1: Direct echo mode - all messages broadcast to all clients
 ### Test Linux Client
 
 ```bash
-cd linux-client
-uv run utter_client.py
+cd utterd
+uv run utterd
 ```
 
 You should see an interactive status panel:
 
 ```
-╭─────────────── 🎤 Utter Linux Client ────────────────╮
+╭─────────────── 🎤 utterd ────────────────╮
 │                                                      │
 │   Status:     Registered - Ready                    │
 │   Server:     ws://localhost:8080                   │
@@ -245,14 +245,14 @@ pnpm start         # Run production build
 ### Linux Client
 
 ```bash
-cd linux-client
-uv run utter_client.py --help    # See all options
-uv run utter_client.py --server ws://example.com:8080  # Custom server
-uv run utter_client.py --ydotool # Use ydotool instead of xdotool
+cd utterd
+uv run utterd --help    # See all options
+uv run utterd --server ws://example.com:8080  # Custom server
+uv run utterd --ydotool # Use ydotool instead of xdotool
 
 # Or make it executable and run directly
-chmod +x utter_client.py
-./utter_client.py --help
+chmod +x utterd
+./utterd --help
 ```
 
 ### Android App

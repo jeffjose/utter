@@ -9,8 +9,8 @@ This document explains how to test that the Linux client properly handles connec
 **Test:**
 ```bash
 # Don't start the relay server
-cd linux-client
-uv run utter_client.py
+cd utterd
+uv run utterd
 ```
 
 **Expected Behavior:**
@@ -28,8 +28,8 @@ cd relay-server
 pnpm dev
 
 # Terminal 2: Start Linux client
-cd linux-client
-uv run utter_client.py
+cd utterd
+uv run utterd
 
 # Wait for "Registered - Ready" status
 # Then kill the relay server (Ctrl+C in Terminal 1)

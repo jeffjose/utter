@@ -173,10 +173,8 @@ utter/
 │   ├── package.json
 │   ├── tsconfig.json
 │   └── README.md
-├── linux-client/               # Python client
-│   ├── utter_client/
-│   ├── requirements.txt
-│   ├── setup.py
+├── utterd/                     # Python client
+│   ├── utterd
 │   └── README.md
 └── README.md                   # Main project README
 ```

@@ -141,7 +141,7 @@ The relay server routes messages based on device IDs, ensuring messages reach th
 ## Related Components
 
 - **Android App**: `/android-app` - Mobile app with voice input
-- **Linux Client**: `/linux-client` - Python client that receives and types messages
+- **Linux Client**: `/utterd` - Python client that receives and types messages
 - **Relay Server**: `/relay-server` - Node.js WebSocket relay server
 
 ## License

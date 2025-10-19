@@ -1,4 +1,4 @@
-# Utter Linux Client
+# utterd
 
 Receives text from Android and simulates keyboard input on Linux.
 
@@ -56,19 +56,19 @@ The script uses inline dependencies (PEP 723), so `uv` will automatically manage
 ### Connect to local relay server
 
 ```bash
-uv run utter_client.py
+uv run utterd
 ```
 
 ### Connect to remote relay server
 
 ```bash
-uv run utter_client.py --server ws://your-server.com:8080
+uv run utterd --server ws://your-server.com:8080
 ```
 
 ### Use ydotool (Wayland)
 
 ```bash
-uv run utter_client.py --ydotool
+uv run utterd --ydotool
 ```
 
 ## Testing
@@ -76,7 +76,7 @@ uv run utter_client.py --ydotool
 1. Start the relay server first
 2. Start the Linux client:
    ```bash
-   uv run utter_client.py
+   uv run utterd
    ```
 3. Open a text editor (VS Code, gedit, etc.)
 4. Focus the text editor window
@@ -95,8 +95,8 @@ After=network.target
 [Service]
 Type=simple
 User=your-username
-WorkingDirectory=/path/to/utter/linux-client
-ExecStart=/home/your-username/.local/bin/uv run utter_client.py --server ws://your-server:8080
+WorkingDirectory=/path/to/utter/utterd
+ExecStart=/home/your-username/.local/bin/uv run utterd --server ws://your-server:8080
 Restart=always
 RestartSec=10
 
