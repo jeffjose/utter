@@ -2,6 +2,7 @@
 
 import WebSocket from 'ws';
 import * as readline from 'readline';
+import * as os from 'os';
 
 interface Device {
   deviceId: string;
@@ -9,6 +10,21 @@ interface Device {
   deviceType: string;
   status: string;
 }
+
+// ANSI color codes
+const colors = {
+  reset: '\x1b[0m',
+  bright: '\x1b[1m',
+  dim: '\x1b[2m',
+  red: '\x1b[31m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[34m',
+  magenta: '\x1b[35m',
+  cyan: '\x1b[36m',
+  white: '\x1b[37m',
+  gray: '\x1b[90m',
+};
 
 class TestClient {
   private ws: WebSocket | null = null;
@@ -18,7 +34,10 @@ class TestClient {
   private deviceName: string;
   private devices: Device[] = [];
   private targetDevice: string | null = null;
+  private targetDeviceName: string | null = null; // Remember target by name for restoration
   private rl: readline.Interface;
+  private reconnectAttempts: number = 0;
+  private maxReconnectDelay: number = 30000; // 30 seconds max
 
   constructor(serverUrl: string, deviceId: string = 'test-client-1', deviceName: string = 'Test Client') {
     this.serverUrl = serverUrl;
@@ -28,19 +47,20 @@ class TestClient {
     this.rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
-      prompt: '> '
+      prompt: '> ',
+      terminal: true
     });
   }
 
   async connect(): Promise<void> {
     return new Promise((resolve, reject) => {
-      console.log(`Connecting to ${this.serverUrl}...`);
-
       this.ws = new WebSocket(this.serverUrl);
 
       this.ws.on('open', () => {
-        console.log('✓ Connected to relay server');
+        console.log(`${colors.green}✓ Connected${colors.reset}`);
         this.connected = true;
+        this.reconnectAttempts = 0;
+        this.updatePrompt(); // Update prompt to show connected state
         this.register();
         resolve();
       });
@@ -50,26 +70,39 @@ class TestClient {
       });
 
       this.ws.on('close', () => {
-        console.log('✗ Disconnected from server');
+        console.log(`${colors.red}✗ Disconnected${colors.reset}`);
         this.connected = false;
+        this.updatePrompt(); // Update prompt to show disconnected state
+        this.scheduleReconnect();
       });
 
       this.ws.on('error', (error: Error) => {
-        console.error('✗ WebSocket error:', error.message);
-        reject(error);
+        // Silently handle connection errors - reconnect will handle it
       });
     });
+  }
+
+  private scheduleReconnect(): void {
+    this.reconnectAttempts++;
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), this.maxReconnectDelay);
+
+    console.log(`${colors.gray}Reconnecting in ${delay / 1000}s...${colors.reset}`);
+
+    setTimeout(() => {
+      this.connect().catch(() => {
+        // Will retry via scheduleReconnect in close handler
+      });
+    }, delay);
   }
 
   private register(): void {
     const registerMsg = {
       type: 'register',
-      clientType: 'android', // Pretend to be Android for testing
+      clientType: 'controller',
       deviceId: this.deviceId,
       deviceName: this.deviceName
     };
 
-    console.log('Registering as Android device...');
     this.send(registerMsg);
   }
 
@@ -79,27 +112,40 @@ class TestClient {
 
       switch (msg.type) {
         case 'connected':
-          console.log('✓ Server acknowledged connection');
+          // Silently acknowledged
           break;
 
         case 'registered':
-          console.log('✓ Registered successfully');
-          this.fetchDevices();
+          console.log(`${colors.green}✓ Registered${colors.reset}`);
+          this.fetchDevices(); // Auto-refresh device list on registration
           break;
 
         case 'devices':
           this.handleDeviceList(msg.devices);
+          // Auto-restore target if it exists in the new device list
+          this.restoreTarget();
           break;
 
         case 'message':
         case 'text':
-          console.log(`\n← ${msg.from}: ${msg.content}`);
+          console.log(`\n${colors.cyan}↓ ${msg.from}:${colors.reset} ${msg.content}`);
+          this.updatePrompt();
+          this.rl.prompt();
+          break;
+
+        case 'message_sent':
+          // Message sent acknowledgment - silently ignore
+          break;
+
+        case 'error':
+          console.log(`\n${colors.red}✗ ${msg.message}${colors.reset}`);
           this.updatePrompt();
           this.rl.prompt();
           break;
 
         default:
-          console.log('Received:', msg);
+          // Silently ignore unknown message types
+          break;
       }
     } catch (e) {
       console.error('Failed to parse message:', data);
@@ -109,34 +155,40 @@ class TestClient {
   private handleDeviceList(devices: Device[]): void {
     this.devices = devices.filter(d => d.deviceType === 'linux');
 
-    console.log('\nAvailable Linux devices:');
-    this.devices.forEach((device, idx) => {
-      const statusIcon = device.status === 'online' ? '●' : '○';
-      console.log(`  ${idx + 1}. ${device.deviceName} ${statusIcon}`);
-    });
+    // Validate current target still exists
+    if (this.targetDevice && !this.devices.find(d => d.deviceId === this.targetDevice)) {
+      console.log(`${colors.yellow}⚠ Target device went offline${colors.reset}`);
+      this.targetDevice = null;
+      this.targetDeviceName = null;
+    }
 
     if (this.devices.length > 0) {
-      console.log('\nUse /device <number> to select a device');
-      console.log('Example: /device 1\n');
-    } else {
-      console.log('\n⚠ No Linux devices found');
-      console.log('Mock devices will be used for testing\n');
-
-      // Add mock devices for testing
-      this.devices = [
-        { deviceId: 'linux-1', deviceName: 'Work Laptop', deviceType: 'linux', status: 'online' },
-        { deviceId: 'linux-2', deviceName: 'Home Desktop', deviceType: 'linux', status: 'online' }
-      ];
-
-      console.log('Mock devices:');
+      console.log(`\n${colors.bright}Devices:${colors.reset}`);
       this.devices.forEach((device, idx) => {
-        console.log(`  ${idx + 1}. ${device.deviceName}`);
+        const statusIcon = device.status === 'online' ? `${colors.green}●${colors.reset}` : `${colors.gray}○${colors.reset}`;
+        const isTarget = device.deviceId === this.targetDevice ? ` ${colors.green}(selected)${colors.reset}` : '';
+        console.log(`  ${colors.cyan}${idx + 1}.${colors.reset} ${device.deviceName} ${statusIcon}${isTarget}`);
       });
-      console.log();
+      console.log(`${colors.gray}Type /device <number> to select${colors.reset}\n`);
+    } else {
+      console.log(`${colors.yellow}No devices found${colors.reset}\n`);
     }
 
     this.updatePrompt();
     this.rl.prompt();
+  }
+
+  private restoreTarget(): void {
+    // Try to restore target by device name after reconnect
+    if (!this.targetDevice && this.targetDeviceName) {
+      const device = this.devices.find(d => d.deviceName === this.targetDeviceName);
+      if (device) {
+        this.targetDevice = device.deviceId;
+        console.log(`${colors.green}✓ Reconnected to ${this.targetDeviceName}${colors.reset}`);
+        this.updatePrompt();
+        this.rl.prompt();
+      }
+    }
   }
 
   private fetchDevices(): void {
@@ -156,7 +208,7 @@ class TestClient {
 
   sendMessage(text: string): void {
     if (!this.targetDevice) {
-      console.log('✗ No target device selected. Use /target <number> first');
+      console.log(`${colors.red}✗ No device selected. Use /device <number>${colors.reset}`);
       return;
     }
 
@@ -168,7 +220,6 @@ class TestClient {
     };
 
     this.send(msg);
-    console.log(`→ Sent to ${this.targetDevice}: ${text}`);
   }
 
   private handleCommand(input: string): boolean {
@@ -190,33 +241,36 @@ class TestClient {
       case 'device':
       case 'target':
         if (args.length === 0) {
-          console.log('Usage: /device <number>');
+          console.log(`${colors.gray}Usage: /device <number>${colors.reset}`);
         } else {
           const idx = parseInt(args[0]) - 1;
           if (idx >= 0 && idx < this.devices.length) {
             this.targetDevice = this.devices[idx].deviceId;
-            console.log(`✓ Now sending to: ${this.devices[idx].deviceName}`);
+            this.targetDeviceName = this.devices[idx].deviceName; // Remember name for restoration
+            console.log(`${colors.green}✓ Sending to ${this.devices[idx].deviceName}${colors.reset}`);
           } else {
-            console.log(`✗ Invalid device number. Use /devices to see available devices`);
+            console.log(`${colors.red}✗ Invalid device number${colors.reset}`);
           }
         }
         break;
 
       case 'status':
-        console.log(`Connected: ${this.connected}`);
-        console.log(`Target: ${this.targetDevice || 'none'}`);
-        console.log(`Devices: ${this.devices.length}`);
+        const statusColor = this.connected ? colors.green : colors.red;
+        console.log(`${colors.bright}Status:${colors.reset}`);
+        console.log(`  Connected: ${statusColor}${this.connected}${colors.reset}`);
+        console.log(`  Target: ${this.targetDevice || colors.gray + 'none' + colors.reset}`);
+        console.log(`  Devices: ${this.devices.length}`);
         break;
 
       case 'quit':
       case 'exit':
-        console.log('Goodbye!');
+        console.log(`${colors.cyan}Goodbye!${colors.reset}`);
         this.disconnect();
         process.exit(0);
 
       default:
-        console.log(`Unknown command: /${cmd}`);
-        console.log('Type /help for available commands');
+        console.log(`${colors.red}Unknown command: /${cmd}${colors.reset}`);
+        console.log(`${colors.gray}Type /help for available commands${colors.reset}`);
     }
 
     return true;
@@ -247,15 +301,17 @@ Examples:
     if (this.targetDevice) {
       const device = this.devices.find(d => d.deviceId === this.targetDevice);
       const name = device?.deviceName || this.targetDevice;
-      this.rl.setPrompt(`${name}> `);
+
+      // Color based on connection status
+      const promptColor = this.connected ? colors.magenta : colors.red;
+      this.rl.setPrompt(`${promptColor}${name}${colors.reset}> `);
     } else {
-      this.rl.setPrompt('> ');
+      this.rl.setPrompt(`${colors.dim}>${colors.reset} `);
     }
   }
 
   startREPL(): void {
-    console.log('\nUtter Test Client - REPL Mode');
-    console.log('Type /help for commands\n');
+    console.log(`${colors.gray}Type /help for commands${colors.reset}\n`);
 
     this.updatePrompt();
 
@@ -269,6 +325,7 @@ Examples:
 
       // Handle commands
       if (this.handleCommand(trimmed)) {
+        (this.rl as any).line = '';
         this.updatePrompt();
         this.rl.prompt();
         return;
@@ -276,8 +333,13 @@ Examples:
 
       // Send as message
       this.sendMessage(trimmed);
-      this.updatePrompt();
-      this.rl.prompt();
+
+      // Delay prompt slightly to let any incoming messages print first
+      setTimeout(() => {
+        (this.rl as any).line = '';
+        this.updatePrompt();
+        this.rl.prompt();
+      }, 100);
     });
 
     this.rl.on('close', () => {
@@ -302,23 +364,24 @@ Examples:
 async function main() {
   const args = process.argv.slice(2);
   const serverUrl = args[0] || 'ws://localhost:8080';
-  const deviceId = args[1] || `test-client-${Math.random().toString(36).substring(7)}`;
-  const deviceName = args[2] || 'Test Client';
 
-  console.log('Utter Linux Test Client');
-  console.log('=======================');
-  console.log(`Server: ${serverUrl}`);
-  console.log(`Device ID: ${deviceId}`);
-  console.log(`Device Name: ${deviceName}\n`);
+  // Client format: hostname-client-shortid
+  const hostname = os.hostname();
+  const shortId = Math.random().toString(36).substring(2, 8);
+  const deviceId = args[1] || `${hostname}-client-${shortId}`;
+  const deviceName = args[2] || deviceId;
+
+  console.log(`${colors.bright}${colors.cyan}Utter${colors.reset} ${colors.dim}Test Client${colors.reset}`);
+  console.log(`${colors.gray}${serverUrl} • ${deviceName}${colors.reset}\n`);
 
   const client = new TestClient(serverUrl, deviceId, deviceName);
 
+  client.startREPL();
+
   try {
     await client.connect();
-    client.startREPL();
   } catch (error) {
-    console.error('Failed to connect:', error);
-    process.exit(1);
+    // Will auto-reconnect
   }
 }
 

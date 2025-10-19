@@ -98,7 +98,6 @@ wss.on('connection', (ws: WebSocket) => {
   ws.on('message', (data: Buffer) => {
     try {
       const message = JSON.parse(data.toString());
-      console.log(`[${clientId}] Received:`, message);
 
       // Handle different message types
       switch (message.type) {
@@ -167,8 +166,6 @@ function handleRegister(client: Client, message: any) {
 }
 
 function handleGetDevices(client: Client) {
-  console.log(`[${client.id}] Fetching device list for user: ${client.userId}`);
-
   const devices: Device[] = [];
 
   // Get all devices for this user
@@ -186,8 +183,6 @@ function handleGetDevices(client: Client) {
     }
   });
 
-  console.log(`[${client.id}] Found ${devices.length} devices`);
-
   client.ws.send(JSON.stringify({
     type: 'devices',
     devices,
@@ -200,7 +195,6 @@ function handleMessage(sender: Client, message: any) {
   const content = message.content;
 
   if (!targetDeviceId) {
-    console.log(`[${sender.id}] Error: No target device specified`);
     sender.ws.send(JSON.stringify({
       type: 'error',
       message: 'No target device specified',
@@ -208,8 +202,6 @@ function handleMessage(sender: Client, message: any) {
     }));
     return;
   }
-
-  console.log(`[${sender.id}] Sending message to device: ${targetDeviceId}`);
 
   // Find target client by device ID
   let targetClient: Client | undefined;
@@ -220,7 +212,6 @@ function handleMessage(sender: Client, message: any) {
   });
 
   if (!targetClient) {
-    console.log(`[${sender.id}] Error: Target device not found or offline: ${targetDeviceId}`);
     sender.ws.send(JSON.stringify({
       type: 'error',
       message: `Target device not found or offline: ${targetDeviceId}`,
@@ -230,7 +221,6 @@ function handleMessage(sender: Client, message: any) {
   }
 
   if (targetClient.ws.readyState !== WebSocket.OPEN) {
-    console.log(`[${sender.id}] Error: Target device not connected: ${targetDeviceId}`);
     sender.ws.send(JSON.stringify({
       type: 'error',
       message: `Target device not connected: ${targetDeviceId}`,
@@ -240,7 +230,7 @@ function handleMessage(sender: Client, message: any) {
   }
 
   // Forward message to target
-  console.log(`[${sender.id}] → [${targetClient.id}] Forwarding message`);
+  console.log(`[${sender.id}] → [${targetClient.id}]`);
   targetClient.ws.send(JSON.stringify({
     type: 'text',
     content: content,
