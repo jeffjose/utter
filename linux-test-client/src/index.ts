@@ -125,7 +125,6 @@ class TestClient {
       this.oauthManager = new OAuthManager(clientId, clientSecret);
       const tokens = await this.oauthManager.getOrAuthenticate();
       this.idToken = tokens.idToken;
-      console.log('');
     } else {
       console.log(`${colors.yellow}⚠ No OAuth credentials found. Running in test mode.${colors.reset}`);
       console.log(`${colors.gray}Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to enable OAuth.${colors.reset}\n`);

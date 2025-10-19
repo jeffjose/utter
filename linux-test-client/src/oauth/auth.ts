@@ -67,7 +67,6 @@ export class OAuthManager {
     }
 
     // Perform new OAuth flow
-    console.log('');
     const tokens = await this.browserAuthFlow();
     this.saveTokens(tokens);
 
