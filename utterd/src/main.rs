@@ -365,7 +365,7 @@ impl UtterClient {
                 // Print message status (two lines)
                 // Move up two lines and clear both before printing
                 use std::io::Write;
-                print!("\x1b[2A\r\x1b[K{}Last:{} {} {}from {}{}\n\x1b[K{}\n",
+                print!("\x1b[2A\r\x1b[K{}Last:{} {} {}from {}{}\n\x1b[K↓ {}\n",
                     colors::DIM, colors::RESET,
                     time_ago,
                     colors::DIM, colors::RESET, sender,
@@ -413,7 +413,7 @@ impl UtterClient {
 
             // Print message status (two lines)
             use std::io::Write;
-            print!("\x1b[2A\r\x1b[K{}Last:{} {} {}from {}{}\n\x1b[K{}\n",
+            print!("\x1b[2A\r\x1b[K{}Last:{} {} {}from {}{}\n\x1b[K↓ {}\n",
                 colors::DIM, colors::RESET,
                 time_ago,
                 colors::DIM, colors::RESET, sender,
