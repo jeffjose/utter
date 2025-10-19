@@ -303,6 +303,13 @@ class TestClient {
       return;
     }
 
+    // Check message length limit
+    const maxLength = parseInt(process.env.MAX_MESSAGE_LENGTH || '5000');
+    if (text.length > maxLength) {
+      console.log(`${colors.red}✗ Message too long (${text.length}/${maxLength} characters)${colors.reset}`);
+      return;
+    }
+
     // Find target device to get public key
     const targetDeviceObj = this.devices.find(d => d.deviceId === this.targetDevice);
 
