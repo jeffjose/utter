@@ -10,13 +10,21 @@
     "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["utter", "test", "client", "websocket"],
+  "keywords": [
+    "utter",
+    "test",
+    "client",
+    "websocket"
+  ],
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.18.3",
   "dependencies": {
     "@noble/curves": "^2.0.1",
     "@noble/hashes": "^2.0.1",
+    "dotenv": "^17.2.3",
+    "google-auth-library": "^10.4.1",
+    "open": "^10.2.0",
     "ws": "^8.18.3"
   },
   "devDependencies": {

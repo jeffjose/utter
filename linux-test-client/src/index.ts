@@ -6,7 +6,11 @@ import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import { config } from 'dotenv';
 import { KeyManager, MessageEncryption } from './crypto/index.js';
+import { OAuthManager } from './oauth/auth.js';
+
+config(); // Load .env file
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -76,6 +80,8 @@ class TestClient {
   private reconnectAttempts: number = 0;
   private keyManager: KeyManager;
   private messageEncryption: MessageEncryption;
+  private oauthManager: OAuthManager | null = null;
+  private idToken: string = '';
 
   constructor(serverUrl: string, deviceId: string = 'test-client-1', deviceName: string = 'Test Client') {
     this.serverUrl = serverUrl;
@@ -90,12 +96,30 @@ class TestClient {
       this.keyManager.getPublicKeyBytes()
     );
 
+    console.log('[Crypto] E2E encryption enabled\n');
+
     this.rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
       prompt: '> ',
       terminal: true
     });
+  }
+
+  async initialize(): Promise<void> {
+    // Initialize OAuth if credentials are provided
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+    if (clientId && clientSecret) {
+      this.oauthManager = new OAuthManager(clientId, clientSecret);
+      const tokens = await this.oauthManager.getOrAuthenticate();
+      this.idToken = tokens.idToken;
+      console.log('');
+    } else {
+      console.log(`${colors.yellow}⚠ No OAuth credentials found. Running in test mode.${colors.reset}`);
+      console.log(`${colors.gray}Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to enable OAuth.${colors.reset}\n`);
+    }
   }
 
   async connect(): Promise<void> {
@@ -144,7 +168,7 @@ class TestClient {
   private register(): void {
     const publicKey = this.keyManager.getPublicKeyBase64();
 
-    const registerMsg = {
+    const registerMsg: any = {
       type: 'register',
       clientType: 'controller',
       deviceId: this.deviceId,
@@ -154,6 +178,11 @@ class TestClient {
       platform: getPlatformInfo(),
       arch: os.arch()
     };
+
+    // Include OAuth token if available
+    if (this.idToken) {
+      registerMsg.token = this.idToken;
+    }
 
     this.send(registerMsg);
   }
@@ -455,6 +484,9 @@ async function main() {
   console.log(`${colors.gray}${serverUrl} • ${deviceName}${colors.reset}\n`);
 
   const client = new TestClient(serverUrl, deviceId, deviceName);
+
+  // Initialize OAuth before connecting
+  await client.initialize();
 
   client.startREPL();
 
