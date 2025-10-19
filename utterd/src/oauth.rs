@@ -286,6 +286,7 @@ impl OAuthManager {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn sign_out(&self) -> Result<(), String> {
         if self.token_path.exists() {
             fs::remove_file(&self.token_path)

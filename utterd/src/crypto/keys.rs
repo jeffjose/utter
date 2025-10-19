@@ -114,6 +114,7 @@ impl KeyManager {
     }
 
     /// Clear all stored keys (delete key file)
+    #[allow(dead_code)]
     pub fn clear_keys(&self) -> Result<(), Box<dyn std::error::Error>> {
         let key_path = self.config_dir.join("keypair.key");
         if key_path.exists() {

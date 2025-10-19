@@ -23,6 +23,7 @@ pub struct EncryptedMessage {
 /// - AES-256-GCM for symmetric encryption
 pub struct MessageEncryption {
     private_key: [u8; 32],
+    #[allow(dead_code)]
     public_key: [u8; 32],
 }
 
@@ -47,6 +48,7 @@ impl MessageEncryption {
     ///
     /// # Returns
     /// Result containing EncryptedMessage with ciphertext, nonce, and ephemeral public key
+    #[allow(dead_code)]
     pub fn encrypt(
         &self,
         plaintext: &str,
