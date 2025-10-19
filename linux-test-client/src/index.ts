@@ -93,7 +93,7 @@ class TestClient {
   private keyManager: KeyManager;
   private messageEncryption: MessageEncryption;
   private oauthManager: OAuthManager | null = null;
-  private idToken: string = '';
+  private jwt: string = '';
 
   constructor(serverUrl: string, deviceId: string = 'test-client-1', deviceName: string = 'Test Client') {
     this.serverUrl = serverUrl;
@@ -116,6 +116,28 @@ class TestClient {
     });
   }
 
+  private async exchangeForJWT(idToken: string): Promise<string> {
+    // Convert WebSocket URL to HTTP URL for /auth endpoint
+    const httpUrl = this.serverUrl.replace(/^ws/, 'http');
+    const authUrl = new URL('/auth', httpUrl);
+
+    const response = await fetch(authUrl.toString(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ token: idToken })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(`JWT exchange failed: ${error.error || response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.jwt;
+  }
+
   async initialize(): Promise<void> {
     // Initialize OAuth if credentials are provided
     const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -124,7 +146,15 @@ class TestClient {
     if (clientId && clientSecret) {
       this.oauthManager = new OAuthManager(clientId, clientSecret);
       const tokens = await this.oauthManager.getOrAuthenticate();
-      this.idToken = tokens.idToken;
+
+      try {
+        // Exchange Google OAuth token for JWT
+        this.jwt = await this.exchangeForJWT(tokens.idToken);
+        console.log(`${colors.green}✓ JWT obtained${colors.reset}\n`);
+      } catch (error) {
+        console.log(`${colors.red}✗ Failed to obtain JWT: ${error instanceof Error ? error.message : String(error)}${colors.reset}`);
+        console.log(`${colors.yellow}⚠ Continuing without JWT. Server may reject connection.${colors.reset}\n`);
+      }
     } else {
       console.log(`${colors.yellow}⚠ No OAuth credentials found. Running in test mode.${colors.reset}`);
       console.log(`${colors.gray}Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to enable OAuth.${colors.reset}\n`);
@@ -188,9 +218,9 @@ class TestClient {
       arch: os.arch()
     };
 
-    // Include OAuth token if available
-    if (this.idToken) {
-      registerMsg.token = this.idToken;
+    // Include JWT if available
+    if (this.jwt) {
+      registerMsg.jwt = this.jwt;
     }
 
     this.send(registerMsg);

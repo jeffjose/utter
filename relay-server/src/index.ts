@@ -2,12 +2,17 @@ import { WebSocketServer, WebSocket } from 'ws';
 import * as dotenv from 'dotenv';
 import * as os from 'os';
 import * as path from 'path';
+import * as http from 'http';
+import express from 'express';
+import { verifyGoogleToken } from './auth';
+import { signJWT, verifyJWT, getExpirationSeconds } from './jwt';
 
 // Load environment from root .env file
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 8080;
 const MAX_MESSAGE_LENGTH = process.env.MAX_MESSAGE_LENGTH ? parseInt(process.env.MAX_MESSAGE_LENGTH) : 5000;
+const REQUIRE_JWT = process.env.REQUIRE_JWT === 'true';
 
 // ANSI color codes
 const colors = {
@@ -50,8 +55,64 @@ interface Device {
   lastConnected: Date;
 }
 
-// Listen on all network interfaces (don't specify host parameter)
-const wss = new WebSocketServer({ port: PORT });
+// Create Express app for HTTP endpoints
+const app = express();
+app.use(express.json());
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: Date.now()
+  });
+});
+
+// Authentication endpoint - exchange Google OAuth token for JWT
+app.post('/auth', async (req, res) => {
+  try {
+    const { token } = req.body;
+
+    if (!token) {
+      return res.status(400).json({
+        error: 'Missing token in request body'
+      });
+    }
+
+    // Verify Google OAuth token
+    const user = await verifyGoogleToken(token);
+
+    // Sign JWT with user's email as userId
+    const jwt = signJWT(user.email);
+    const expiresIn = getExpirationSeconds();
+
+    console.log(`${colors.green}✓${colors.reset} JWT issued for ${colors.bright}${user.email}${colors.reset}`);
+
+    res.json({
+      jwt,
+      expiresIn,
+      userId: user.email
+    });
+  } catch (error: any) {
+    console.error(`${colors.red}✗${colors.reset} Auth error:`, error.message);
+
+    // Return appropriate error status
+    if (error.message.includes('Token verification failed')) {
+      return res.status(401).json({
+        error: error.message
+      });
+    }
+
+    res.status(500).json({
+      error: 'Internal server error'
+    });
+  }
+});
+
+// Create HTTP server
+const httpServer = http.createServer(app);
+
+// Attach WebSocket server to HTTP server
+const wss = new WebSocketServer({ server: httpServer });
 
 // Helper function to get network addresses
 function getNetworkAddresses(): string[] {
@@ -73,27 +134,41 @@ function getNetworkAddresses(): string[] {
   return addresses;
 }
 
-console.log('');
-console.log(`${colors.bright}${colors.cyan}Utter${colors.reset} ${colors.dim}Relay Server${colors.reset}`);
-console.log(`${colors.gray}${'─'.repeat(60)}${colors.reset}`);
-console.log(`${colors.green}●${colors.reset} Listening on ${colors.bright}*:${PORT}${colors.reset}`);
-console.log('');
-console.log(`${colors.dim}Available endpoints:${colors.reset}`);
-console.log(`  ${colors.cyan}ws://localhost:${PORT}${colors.reset} ${colors.dim}(local)${colors.reset}`);
+// Start HTTP server (which includes WebSocket)
+httpServer.listen(PORT, () => {
+  console.log('');
+  console.log(`${colors.bright}${colors.cyan}Utter${colors.reset} ${colors.dim}Relay Server${colors.reset}`);
+  console.log(`${colors.gray}${'─'.repeat(60)}${colors.reset}`);
+  console.log(`${colors.green}●${colors.reset} Listening on ${colors.bright}*:${PORT}${colors.reset}`);
+  console.log('');
+  console.log(`${colors.dim}HTTP Endpoints:${colors.reset}`);
+  console.log(`  ${colors.cyan}POST http://localhost:${PORT}/auth${colors.reset} ${colors.dim}(obtain JWT)${colors.reset}`);
+  console.log(`  ${colors.cyan}GET  http://localhost:${PORT}/health${colors.reset} ${colors.dim}(health check)${colors.reset}`);
+  console.log('');
+  console.log(`${colors.dim}WebSocket Endpoints:${colors.reset}`);
+  console.log(`  ${colors.cyan}ws://localhost:${PORT}${colors.reset} ${colors.dim}(local)${colors.reset}`);
 
-const networkAddresses = getNetworkAddresses();
-if (networkAddresses.length > 0) {
-  networkAddresses.forEach(addr => {
-    console.log(`  ${colors.cyan}ws://${addr}:${PORT}${colors.reset} ${colors.dim}(network)${colors.reset}`);
-  });
-}
+  const networkAddresses = getNetworkAddresses();
+  if (networkAddresses.length > 0) {
+    networkAddresses.forEach(addr => {
+      console.log(`  ${colors.cyan}ws://${addr}:${PORT}${colors.reset} ${colors.dim}(network)${colors.reset}`);
+    });
+  }
 
-console.log('');
-console.log(`${colors.dim}Mobile:${colors.reset}`);
-console.log(`  Emulator: ${colors.yellow}ws://10.0.2.2:${PORT}${colors.reset}`);
-console.log(`  Physical: ${colors.gray}Use network address above${colors.reset}`);
-console.log(`${colors.gray}${'─'.repeat(60)}${colors.reset}`);
-console.log('');
+  console.log('');
+  console.log(`${colors.dim}Mobile:${colors.reset}`);
+  console.log(`  Emulator: ${colors.yellow}ws://10.0.2.2:${PORT}${colors.reset}`);
+  console.log(`  Physical: ${colors.gray}Use network address above${colors.reset}`);
+  console.log('');
+  console.log(`${colors.dim}Authentication:${colors.reset}`);
+  if (REQUIRE_JWT) {
+    console.log(`  ${colors.red}●${colors.reset} JWT ${colors.bright}REQUIRED${colors.reset}`);
+  } else {
+    console.log(`  ${colors.yellow}●${colors.reset} JWT ${colors.dim}optional (legacy mode)${colors.reset}`);
+  }
+  console.log(`${colors.gray}${'─'.repeat(60)}${colors.reset}`);
+  console.log('');
+});
 
 wss.on('connection', (ws: WebSocket) => {
   const clientId = generateId();
@@ -162,6 +237,41 @@ wss.on('connection', (ws: WebSocket) => {
 });
 
 function handleRegister(client: Client, message: any) {
+  // JWT Authentication
+  let authenticatedUserId: string | undefined;
+
+  if (message.jwt) {
+    // JWT provided - verify it
+    try {
+      const payload = verifyJWT(message.jwt);
+      authenticatedUserId = payload.userId;
+      console.log(`${colors.dim}[${client.id}]${colors.reset} ${colors.green}✓${colors.reset} JWT verified for ${colors.bright}${authenticatedUserId}${colors.reset}`);
+    } catch (error: any) {
+      console.error(`${colors.dim}[${client.id}]${colors.reset} ${colors.red}✗${colors.reset} JWT verification failed:`, error.message);
+      client.ws.send(JSON.stringify({
+        type: 'error',
+        message: error.message,
+        timestamp: Date.now()
+      }));
+      return;
+    }
+  } else if (REQUIRE_JWT) {
+    // JWT required but not provided
+    console.error(`${colors.dim}[${client.id}]${colors.reset} ${colors.red}✗${colors.reset} JWT required but not provided`);
+    client.ws.send(JSON.stringify({
+      type: 'error',
+      message: 'JWT required for authentication',
+      timestamp: Date.now()
+    }));
+    return;
+  } else {
+    // Legacy mode - JWT not required
+    if (message.userId) {
+      authenticatedUserId = message.userId;
+      console.log(`${colors.dim}[${client.id}]${colors.reset} ${colors.yellow}⚠${colors.reset} Legacy mode: accepting userId without JWT`);
+    }
+  }
+
   // Validate public key if provided
   if (message.publicKey) {
     try {
@@ -189,15 +299,16 @@ function handleRegister(client: Client, message: any) {
   client.platform = message.platform;
   client.arch = message.arch;
 
-  // Accept userId from client if provided (no verification - relay server is user-agnostic)
-  if (message.userId) {
-    client.userId = message.userId;
+  // Use authenticated userId from JWT (or legacy userId if JWT not required)
+  if (authenticatedUserId) {
+    client.userId = authenticatedUserId;
   }
 
   const typeColor = client.type === 'target' ? colors.blue : client.type === 'android' ? colors.magenta : client.type === 'controller' ? colors.cyan : colors.gray;
 
   // Build metadata string
   const metadata = [];
+  if (client.userId) metadata.push(client.userId);
   if (client.version) metadata.push(client.version);
   if (client.platform) metadata.push(client.platform);
   if (client.arch) metadata.push(client.arch);
@@ -210,6 +321,7 @@ function handleRegister(client: Client, message: any) {
     clientId: client.id,
     deviceId: client.deviceId,
     clientType: client.type,
+    userId: client.userId,
     timestamp: Date.now()
   }));
 }

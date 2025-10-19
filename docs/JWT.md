@@ -217,6 +217,208 @@ Even if relay is compromised, E2E encryption protects message content.
 - Or: use short-lived JWTs and don't implement refresh
 - Trade-off: security vs. convenience
 
+## Implementation Guide
+
+### Dependencies
+
+**Required npm packages:**
+```bash
+# Production dependencies
+pnpm add jsonwebtoken express
+
+# Development dependencies
+pnpm add -D @types/jsonwebtoken @types/express
+```
+
+### Environment Variables
+
+Add to `.env` file:
+```bash
+# Google OAuth
+GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+
+# JWT Configuration
+JWT_SECRET=generate-a-secure-random-string-at-least-32-chars
+JWT_EXPIRATION=24h
+
+# Server Configuration
+PORT=8080
+MAX_MESSAGE_LENGTH=5000
+```
+
+**Generate JWT_SECRET:**
+```bash
+node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+```
+
+### JWT Library Configuration
+
+**Using jsonwebtoken:**
+- Algorithm: HS256 (HMAC with SHA-256)
+- Default expiration: 24 hours
+- Payload: `{ userId: email }`
+
+### HTTP Endpoints
+
+#### POST /auth
+
+Exchanges Google OAuth token for JWT.
+
+**Request:**
+```http
+POST /auth
+Content-Type: application/json
+
+{
+  "token": "google-oauth-id-token-here"
+}
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expiresIn": 86400,
+  "userId": "user@gmail.com"
+}
+```
+
+**Error Responses:**
+
+**400 Bad Request** - Missing token:
+```json
+{
+  "error": "Missing token in request body"
+}
+```
+
+**401 Unauthorized** - Invalid Google token:
+```json
+{
+  "error": "Token verification failed: invalid signature"
+}
+```
+
+**401 Unauthorized** - Email not verified:
+```json
+{
+  "error": "Token verification failed: Email not verified"
+}
+```
+
+**500 Internal Server Error:**
+```json
+{
+  "error": "Internal server error"
+}
+```
+
+#### GET /health
+
+Health check endpoint.
+
+**Response (200 OK):**
+```json
+{
+  "status": "ok",
+  "timestamp": 1234567890
+}
+```
+
+### WebSocket Authentication
+
+**Client Registration with JWT:**
+```json
+{
+  "type": "register",
+  "clientType": "target",
+  "deviceId": "nomad",
+  "deviceName": "nomad",
+  "publicKey": "base64-encoded-key",
+  "jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "version": "utterd v0.1.0",
+  "platform": "Ubuntu 22.04.5 LTS",
+  "arch": "x86_64"
+}
+```
+
+**Server Response on Success:**
+```json
+{
+  "type": "registered",
+  "clientId": "xyz123",
+  "deviceId": "nomad",
+  "clientType": "target",
+  "userId": "user@gmail.com",
+  "timestamp": 1234567890
+}
+```
+
+**Server Error Responses:**
+
+**Missing JWT:**
+```json
+{
+  "type": "error",
+  "message": "JWT required for authentication",
+  "timestamp": 1234567890
+}
+```
+
+**Invalid JWT:**
+```json
+{
+  "type": "error",
+  "message": "Invalid JWT: jwt malformed",
+  "timestamp": 1234567890
+}
+```
+
+**Expired JWT:**
+```json
+{
+  "type": "error",
+  "message": "JWT expired. Please obtain a new token.",
+  "timestamp": 1234567890
+}
+```
+
+### Migration Strategy
+
+**Phase 1: Dual Mode Support (Backward Compatible)**
+- Support both JWT and legacy (no auth) connections
+- Add `REQUIRE_JWT=false` environment variable
+- Log warnings for unauthenticated connections
+
+**Phase 2: JWT Required**
+- Set `REQUIRE_JWT=true`
+- Reject connections without valid JWT
+- All clients must authenticate
+
+**Phase 3: Cleanup**
+- Remove legacy code paths
+- Remove `REQUIRE_JWT` flag
+
+### Server Architecture
+
+The relay server runs both HTTP and WebSocket on the same port:
+
+```typescript
+// HTTP server for /auth endpoint
+const httpServer = http.createServer(app);
+
+// WebSocket server attached to HTTP server
+const wss = new WebSocketServer({ server: httpServer });
+
+// Listen on single port
+httpServer.listen(PORT);
+```
+
+**Endpoint Summary:**
+- `POST /auth` - Obtain JWT from Google OAuth token
+- `GET /health` - Health check
+- `ws://host:port/` - WebSocket connection (requires JWT in register message)
+
 ## Future Enhancements
 
 ### Multi-Provider Auth
