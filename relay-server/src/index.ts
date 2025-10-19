@@ -6,16 +6,33 @@ dotenv.config();
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 8080;
 
+// ANSI color codes
+const colors = {
+  reset: '\x1b[0m',
+  bright: '\x1b[1m',
+  dim: '\x1b[2m',
+  red: '\x1b[31m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[34m',
+  magenta: '\x1b[35m',
+  cyan: '\x1b[36m',
+  gray: '\x1b[90m',
+};
+
 interface Client {
   ws: WebSocket;
   id: string;
-  type: 'android' | 'linux' | 'unknown';
+  type: 'android' | 'linux' | 'controller' | 'unknown';
   deviceId?: string;
   deviceName?: string;
   userId?: string;
   publicKey?: string;
   status: 'online' | 'offline';
   connectedAt: Date;
+  version?: string;
+  platform?: string;
+  arch?: string;
 }
 
 const clients = new Map<string, Client>();
@@ -53,37 +70,32 @@ function getNetworkAddresses(): string[] {
   return addresses;
 }
 
-console.log('='.repeat(60));
-console.log('Utter Relay Server started');
-console.log('='.repeat(60));
-console.log(`Listening on all interfaces: *:${PORT}`);
 console.log('');
-console.log('Available endpoints:');
-console.log(`  - ws://localhost:${PORT} (local only)`);
+console.log(`${colors.bright}${colors.cyan}Utter${colors.reset} ${colors.dim}Relay Server${colors.reset}`);
+console.log(`${colors.gray}${'─'.repeat(60)}${colors.reset}`);
+console.log(`${colors.green}●${colors.reset} Listening on ${colors.bright}*:${PORT}${colors.reset}`);
+console.log('');
+console.log(`${colors.dim}Available endpoints:${colors.reset}`);
+console.log(`  ${colors.cyan}ws://localhost:${PORT}${colors.reset} ${colors.dim}(local)${colors.reset}`);
 
 const networkAddresses = getNetworkAddresses();
 if (networkAddresses.length > 0) {
   networkAddresses.forEach(addr => {
-    console.log(`  - ws://${addr}:${PORT} (network)`);
+    console.log(`  ${colors.cyan}ws://${addr}:${PORT}${colors.reset} ${colors.dim}(network)${colors.reset}`);
   });
-} else {
-  console.log('  - No network interfaces found');
 }
 
 console.log('');
-console.log('Android Emulator: Use ws://10.0.2.2:' + PORT);
-console.log('Physical Device: Use one of the network addresses above');
-console.log('='.repeat(60));
-console.log('Features:');
-console.log('  - Device registry and management');
-console.log('  - Targeted message routing');
-console.log('  - User-based device isolation (OAuth ready)');
+console.log(`${colors.dim}Mobile:${colors.reset}`);
+console.log(`  Emulator: ${colors.yellow}ws://10.0.2.2:${PORT}${colors.reset}`);
+console.log(`  Physical: ${colors.gray}Use network address above${colors.reset}`);
+console.log(`${colors.gray}${'─'.repeat(60)}${colors.reset}`);
 console.log('');
 
 wss.on('connection', (ws: WebSocket) => {
   const clientId = generateId();
 
-  console.log(`[${clientId}] Client connected`);
+  console.log(`${colors.dim}[${clientId}]${colors.reset} ${colors.green}●${colors.reset} Connected`);
 
   const client: Client = {
     ws,
@@ -122,20 +134,20 @@ wss.on('connection', (ws: WebSocket) => {
           break;
 
         default:
-          console.log(`[${clientId}] Unknown message type: ${message.type}`);
+          console.log(`${colors.dim}[${clientId}]${colors.reset} ${colors.yellow}?${colors.reset} Unknown type: ${colors.dim}${message.type}${colors.reset}`);
       }
     } catch (error) {
-      console.error(`[${clientId}] Error processing message:`, error);
+      console.error(`${colors.dim}[${clientId}]${colors.reset} ${colors.red}✗${colors.reset} Error:`, error);
     }
   });
 
   ws.on('close', () => {
-    console.log(`[${clientId}] Client disconnected`);
+    console.log(`${colors.dim}[${clientId}]${colors.reset} ${colors.red}●${colors.reset} Disconnected`);
     clients.delete(clientId);
   });
 
   ws.on('error', (error) => {
-    console.error(`[${clientId}] WebSocket error:`, error);
+    console.error(`${colors.dim}[${clientId}]${colors.reset} ${colors.red}✗${colors.reset} Error:`, error);
   });
 
   // Send welcome message
@@ -157,9 +169,9 @@ function handleRegister(client: Client, message: any) {
       }
       // Store the validated key
       client.publicKey = message.publicKey;
-      console.log(`[${client.id}] Public key validated and stored (${keyBytes.length} bytes)`);
+      console.log(`${colors.dim}[${client.id}]${colors.reset} ${colors.green}🔑${colors.reset} Public key validated`);
     } catch (err) {
-      console.error(`[${client.id}] Invalid public key:`, err);
+      console.error(`${colors.dim}[${client.id}]${colors.reset} ${colors.red}✗${colors.reset} Invalid public key:`, err);
       client.ws.send(JSON.stringify({
         type: 'error',
         message: 'Invalid public key format. Must be base64-encoded Ed25519 key (32 bytes)',
@@ -172,13 +184,25 @@ function handleRegister(client: Client, message: any) {
   client.type = message.clientType || 'unknown';
   client.deviceId = message.deviceId || client.id;
   client.deviceName = message.deviceName || `${client.type}-${client.id}`;
+  client.version = message.version;
+  client.platform = message.platform;
+  client.arch = message.arch;
 
   // TODO Phase 6: Replace with OAuth verification
   // const userInfo = await verifyGoogleToken(message.token);
   // client.userId = userInfo.email;
   client.userId = message.userId || 'test-user';
 
-  console.log(`[${client.id}] Registered as ${client.type} (device: ${client.deviceId}, name: ${client.deviceName})`);
+  const typeColor = client.type === 'linux' ? colors.blue : client.type === 'android' ? colors.magenta : client.type === 'controller' ? colors.cyan : colors.gray;
+
+  // Build metadata string
+  const metadata = [];
+  if (client.version) metadata.push(client.version);
+  if (client.platform) metadata.push(client.platform);
+  if (client.arch) metadata.push(client.arch);
+  const metaStr = metadata.length > 0 ? ` ${colors.dim}• ${metadata.join(' • ')}${colors.reset}` : '';
+
+  console.log(`${colors.dim}[${client.id}]${colors.reset} Registered: ${colors.bright}${client.deviceName}${colors.reset} ${colors.dim}(${typeColor}${client.type}${colors.reset}${colors.dim})${colors.reset}${metaStr}`);
 
   client.ws.send(JSON.stringify({
     type: 'registered',
@@ -227,6 +251,17 @@ function handleMessage(sender: Client, message: any) {
     return;
   }
 
+  // ENFORCE ENCRYPTION: Reject plaintext messages
+  if (!message.encrypted) {
+    sender.ws.send(JSON.stringify({
+      type: 'error',
+      message: 'REJECTED: Plaintext messages not allowed. E2E encryption is REQUIRED.',
+      timestamp: Date.now()
+    }));
+    console.log(`${colors.dim}[${sender.id}]${colors.reset} ${colors.red}✗${colors.reset} Rejected plaintext message`);
+    return;
+  }
+
   // Find target client by device ID
   let targetClient: Client | undefined;
   clients.forEach((client) => {
@@ -254,7 +289,10 @@ function handleMessage(sender: Client, message: any) {
   }
 
   // Forward message to target (including encryption fields if present)
-  console.log(`[${sender.id}] → [${targetClient.id}] ${message.encrypted ? '(encrypted)' : '(plaintext)'}`);
+  const encStatus = message.encrypted
+    ? `${colors.green}🔒 encrypted${colors.reset}`
+    : `${colors.dim}plaintext${colors.reset}`;
+  console.log(`${colors.dim}[${sender.id}]${colors.reset} ${colors.cyan}→${colors.reset} ${colors.dim}[${targetClient.id}]${colors.reset} ${encStatus}`);
   const forwardedMessage: any = {
     type: 'text',
     content: content,
@@ -280,12 +318,12 @@ function handleMessage(sender: Client, message: any) {
 }
 
 function handleText(sender: Client, message: any) {
-  console.log(`[${sender.id}] Broadcasting text: "${message.content}"`);
+  console.log(`${colors.dim}[${sender.id}]${colors.reset} ${colors.magenta}Broadcasting${colors.reset} ${colors.dim}"${message.content}"${colors.reset}`);
 
   // Phase 1: Simple broadcast to all OTHER clients
   clients.forEach((client) => {
     if (client.id !== sender.id && client.ws.readyState === WebSocket.OPEN) {
-      console.log(`[${sender.id}] → [${client.id}] Forwarding text`);
+      console.log(`${colors.dim}[${sender.id}]${colors.reset} ${colors.cyan}→${colors.reset} ${colors.dim}[${client.id}]${colors.reset}`);
       client.ws.send(JSON.stringify({
         type: 'text',
         content: message.content,
@@ -302,8 +340,8 @@ function generateId(): string {
 
 // Graceful shutdown
 function shutdown() {
-  console.log('\nShutting down relay server...');
-  console.log(`Closing ${clients.size} active connections...`);
+  console.log(`\n${colors.yellow}Shutting down...${colors.reset}`);
+  console.log(`${colors.dim}Closing ${clients.size} active connection(s)${colors.reset}`);
 
   // Close all client connections
   clients.forEach((client) => {
@@ -318,13 +356,13 @@ function shutdown() {
 
   // Close the WebSocket server
   wss.close(() => {
-    console.log('Relay server closed');
+    console.log(`${colors.green}✓${colors.reset} Server stopped\n`);
     process.exit(0);
   });
 
   // Force exit after 2 seconds if graceful shutdown hangs
   setTimeout(() => {
-    console.log('Force closing...');
+    console.log(`${colors.red}Force closing...${colors.reset}`);
     process.exit(0);
   }, 2000);
 }

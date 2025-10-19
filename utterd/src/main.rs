@@ -25,11 +25,32 @@ use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 fn get_hostname() -> String {
     hostname::get()
         .ok()
         .and_then(|h| h.into_string().ok())
         .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn get_platform_info() -> String {
+    // Try to read /etc/os-release for Linux distro info
+    if cfg!(target_os = "linux") {
+        if let Ok(contents) = std::fs::read_to_string("/etc/os-release") {
+            for line in contents.lines() {
+                if line.starts_with("PRETTY_NAME=") {
+                    let name = line.trim_start_matches("PRETTY_NAME=")
+                        .trim_matches('"');
+                    return name.to_string();
+                }
+            }
+        }
+        return "Linux".to_string();
+    }
+
+    // For other platforms, use the OS constant
+    std::env::consts::OS.to_string()
 }
 
 /// utterd - Voice dictation from Android to Linux
@@ -62,6 +83,12 @@ enum WsMessage {
         device_name: String,
         #[serde(rename = "publicKey", skip_serializing_if = "Option::is_none")]
         public_key: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        version: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        platform: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        arch: Option<String>,
     },
     Registered,
     Text {
@@ -214,6 +241,9 @@ impl UtterClient {
                     device_id: hostname.clone(),
                     device_name: hostname,
                     public_key,
+                    version: Some(format!("utterd v{}", VERSION)),
+                    platform: Some(get_platform_info()),
+                    arch: Some(std::env::consts::ARCH.to_string()),
                 })
             }
             WsMessage::Registered => {
@@ -223,36 +253,40 @@ impl UtterClient {
             WsMessage::Text { content, encrypted, nonce, ephemeral_public_key } => {
                 state.messages_received += 1;
 
-                // Decrypt if encrypted
-                let plaintext = if encrypted.unwrap_or(false) {
-                    if let (Some(ref enc), Some(nonce_str), Some(eph_key)) =
-                        (&self.message_encryption, nonce, ephemeral_public_key) {
+                // ENFORCE ENCRYPTION: Reject plaintext messages
+                if !encrypted.unwrap_or(false) {
+                    let err_msg = "REJECTED: Plaintext messages not allowed. E2E encryption is REQUIRED.";
+                    state.last_error = err_msg.to_string();
+                    eprintln!("[Crypto] {}", err_msg);
+                    return None;
+                }
 
-                        let encrypted_msg = EncryptedMessage {
-                            ciphertext: content,
-                            nonce: nonce_str,
-                            ephemeral_public_key: eph_key,
-                        };
+                // Decrypt encrypted message
+                let plaintext = if let (Some(ref enc), Some(nonce_str), Some(eph_key)) =
+                    (&self.message_encryption, nonce, ephemeral_public_key) {
 
-                        match enc.decrypt(&encrypted_msg, "") {
-                            Ok(plaintext) => {
-                                println!("[Crypto] Message decrypted successfully");
-                                plaintext
-                            }
-                            Err(e) => {
-                                let err_msg = format!("Decryption failed: {}", e);
-                                state.last_error = err_msg.clone();
-                                eprintln!("[Crypto] {}", err_msg);
-                                return None;
-                            }
+                    let encrypted_msg = EncryptedMessage {
+                        ciphertext: content,
+                        nonce: nonce_str,
+                        ephemeral_public_key: eph_key,
+                    };
+
+                    match enc.decrypt(&encrypted_msg, "") {
+                        Ok(plaintext) => {
+                            println!("[Crypto] Message decrypted successfully");
+                            plaintext
                         }
-                    } else {
-                        state.last_error = "Received encrypted message but crypto not initialized".to_string();
-                        return None;
+                        Err(e) => {
+                            let err_msg = format!("Decryption failed: {}", e);
+                            state.last_error = err_msg.clone();
+                            eprintln!("[Crypto] {}", err_msg);
+                            return None;
+                        }
                     }
                 } else {
-                    // Plaintext message
-                    content
+                    state.last_error = "Received encrypted message but crypto not initialized".to_string();
+                    eprintln!("[Crypto] {}", state.last_error);
+                    return None;
                 };
 
                 // Truncate for display

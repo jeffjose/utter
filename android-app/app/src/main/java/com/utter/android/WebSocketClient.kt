@@ -140,9 +140,10 @@ class WebSocketClient(
                                     listener?.onError("Failed to decrypt message")
                                 }
                             } else {
-                                // Plaintext message (legacy or fallback)
-                                Log.d(TAG, "Received plaintext message: $content")
-                                listener?.onMessage(content)
+                                // ENFORCE ENCRYPTION: Reject plaintext messages
+                                val errorMsg = "REJECTED: Plaintext messages not allowed. E2E encryption is REQUIRED."
+                                Log.e(TAG, errorMsg)
+                                listener?.onError(errorMsg)
                             }
                         }
                         else -> {

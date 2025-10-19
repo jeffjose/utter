@@ -3,12 +3,14 @@
 import WebSocket from 'ws';
 import * as readline from 'readline';
 import * as os from 'os';
+import { KeyManager, MessageEncryption } from './crypto/index.js';
 
 interface Device {
   deviceId: string;
   deviceName: string;
   deviceType: string;
   status: string;
+  publicKey?: string;
 }
 
 // ANSI color codes
@@ -37,12 +39,23 @@ class TestClient {
   private targetDeviceName: string | null = null; // Remember target by name for restoration
   private rl: readline.Interface;
   private reconnectAttempts: number = 0;
-  private maxReconnectDelay: number = 30000; // 30 seconds max
+  private keyManager: KeyManager;
+  private messageEncryption: MessageEncryption;
 
   constructor(serverUrl: string, deviceId: string = 'test-client-1', deviceName: string = 'Test Client') {
     this.serverUrl = serverUrl;
     this.deviceId = deviceId;
     this.deviceName = deviceName;
+
+    // Initialize crypto
+    this.keyManager = new KeyManager();
+    this.keyManager.getOrGenerateKeyPair();
+    this.messageEncryption = new MessageEncryption(
+      this.keyManager.getPrivateKeyBytes(),
+      this.keyManager.getPublicKeyBytes()
+    );
+
+    console.log('[Crypto] E2E encryption enabled\n');
 
     this.rl = readline.createInterface({
       input: process.stdin,
@@ -84,7 +97,7 @@ class TestClient {
 
   private scheduleReconnect(): void {
     this.reconnectAttempts++;
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), this.maxReconnectDelay);
+    const delay = 5000; // 5 seconds constant
 
     process.stdout.write(`\r\x1b[K${colors.red}✗ Disconnected${colors.reset} ${colors.gray}— Reconnecting in ${delay / 1000}s...${colors.reset}`);
 
@@ -96,11 +109,15 @@ class TestClient {
   }
 
   private register(): void {
+    const publicKey = this.keyManager.getPublicKeyBase64();
+    console.log('[Crypto] Including public key in registration');
+
     const registerMsg = {
       type: 'register',
       clientType: 'controller',
       deviceId: this.deviceId,
-      deviceName: this.deviceName
+      deviceName: this.deviceName,
+      publicKey
     };
 
     this.send(registerMsg);
@@ -167,9 +184,10 @@ class TestClient {
       this.devices.forEach((device, idx) => {
         const statusIcon = device.status === 'online' ? `${colors.green}●${colors.reset}` : `${colors.gray}○${colors.reset}`;
         const isTarget = device.deviceId === this.targetDevice ? ` ${colors.green}(selected)${colors.reset}` : '';
-        console.log(`  ${colors.cyan}${idx + 1}.${colors.reset} ${device.deviceName} ${statusIcon}${isTarget}`);
+        const encryptIcon = device.publicKey ? '🔒' : '🔓';
+        console.log(`  ${colors.cyan}${idx + 1}.${colors.reset} ${device.deviceName} ${statusIcon} ${encryptIcon}${isTarget}`);
       });
-      console.log(`${colors.gray}Type /device <number> to select${colors.reset}\n`);
+      console.log(`${colors.gray}Type /device <number> to select • 🔒 = encrypted • 🔓 = plaintext only${colors.reset}\n`);
     } else {
       console.log(`${colors.yellow}No devices found${colors.reset}\n`);
     }
@@ -212,14 +230,39 @@ class TestClient {
       return;
     }
 
-    const msg = {
-      type: 'message',
-      to: this.targetDevice,
-      content: text,
-      timestamp: Date.now()
-    };
+    // Find target device to get public key
+    const targetDeviceObj = this.devices.find(d => d.deviceId === this.targetDevice);
 
-    this.send(msg);
+    if (!targetDeviceObj) {
+      console.log(`${colors.red}✗ Target device not found${colors.reset}`);
+      return;
+    }
+
+    if (!targetDeviceObj.publicKey) {
+      console.log(`${colors.red}✗ Target device has no public key - cannot encrypt${colors.reset}`);
+      console.log(`${colors.red}✗ E2E encryption is REQUIRED. Target must support encryption.${colors.reset}`);
+      return;
+    }
+
+    try {
+      // Encrypt the message
+      const encrypted = this.messageEncryption.encrypt(text, targetDeviceObj.publicKey);
+
+      const msg = {
+        type: 'message',
+        to: this.targetDevice,
+        encrypted: true,
+        content: encrypted.ciphertext,
+        nonce: encrypted.nonce,
+        ephemeralPublicKey: encrypted.ephemeralPublicKey,
+        timestamp: Date.now()
+      };
+
+      this.send(msg);
+      console.log(`${colors.green}✓ 🔒 Sent (encrypted)${colors.reset}`);
+    } catch (error) {
+      console.log(`${colors.red}✗ Encryption failed: ${error instanceof Error ? error.message : String(error)}${colors.reset}`);
+    }
   }
 
   private handleCommand(input: string): boolean {
@@ -260,6 +303,7 @@ class TestClient {
         console.log(`  Connected: ${statusColor}${this.connected}${colors.reset}`);
         console.log(`  Target: ${this.targetDevice || colors.gray + 'none' + colors.reset}`);
         console.log(`  Devices: ${this.devices.length}`);
+        console.log(`  Encryption: ${colors.green}enabled${colors.reset}`);
         break;
 
       case 'quit':
@@ -289,11 +333,15 @@ Usage:
   1. Connect to server (automatic on start)
   2. Use /device <number> to select a Linux device
   3. Your prompt will change to show the selected device
-  4. Type any message and press Enter to send
+  4. Type any message and press Enter to send (encrypted)
 
 Examples:
   /device 1          Select device #1 (prompt changes to "Work Laptop>")
-  Work Laptop> Hello world    Send "Hello world" to Work Laptop
+  Work Laptop> Hello world    Send encrypted "Hello world" to Work Laptop
+
+Security:
+  🔒 All messages are encrypted end-to-end
+  🔓 Devices without encryption support cannot receive messages
 `);
   }
 
