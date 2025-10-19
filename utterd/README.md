@@ -1,146 +1,77 @@
 # utterd
 
-Receives text from Android and simulates keyboard input on Linux.
-
-Features a clean, interactive terminal UI that updates in real-time showing connection status, messages received, and errors.
+Linux daemon for receiving voice dictation from Android. Connects to a relay server and types received text into the focused window.
 
 ## Requirements
 
-- Python 3.9+
-- [uv](https://docs.astral.sh/uv/) (Python package manager)
+- Rust (for building)
 - `xdotool` (X11) or `ydotool` (Wayland)
 
-### Install uv
-
+Install tools:
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
+sudo apt install xdotool  # For X11
+sudo apt install ydotool  # For Wayland
 ```
 
-### Install xdotool (X11)
+## Building
 
 ```bash
-sudo apt install xdotool
+cargo build --release
 ```
-
-### Install ydotool (Wayland)
-
-```bash
-sudo apt install ydotool
-```
-
-## Features
-
-- **Interactive Display**: Live-updating status panel instead of scrolling logs
-- **Auto-reconnect**: Automatically reconnects if connection drops with countdown timer
-- **Ping/Pong Keepalive**: Detects dead connections within 5-10 seconds
-- **Connection Resilience**: Handles server restarts, network interruptions, and timeouts
-- **Error Handling**: Clear error messages with helpful suggestions
-- **Message Counter**: Track how many messages have been received
-- **Clean UI**: Uses Rich library for beautiful terminal output
-
-### Resilience Features
-
-The client is designed to handle real-world network issues:
-
-- **Server goes down?** Auto-reconnects when server comes back
-- **Network blip?** Detects via keepalive and reconnects
-- **Timeout?** Won't hang - fails fast and retries
-- **DNS issues?** Shows helpful error messages
-
-See [TEST_RESILIENCE.md](TEST_RESILIENCE.md) for detailed testing scenarios.
 
 ## Usage
 
-The script uses inline dependencies (PEP 723), so `uv` will automatically manage dependencies (websockets + rich).
-
-### Connect to local relay server
-
+Basic usage (connects to localhost:8080):
 ```bash
-uv run utterd
+utterd
 ```
 
-### Connect to remote relay server
-
+Connect to remote server:
 ```bash
-uv run utterd --server ws://your-server.com:8080
+utterd --server ws://192.168.1.100:8080
 ```
 
-### Use ydotool (Wayland)
-
+Use ydotool for Wayland:
 ```bash
-uv run utterd --ydotool
+utterd --tool ydotool
 ```
 
-## Testing
+## Configuration
 
-1. Start the relay server first
-2. Start the Linux client:
-   ```bash
-   uv run utterd
-   ```
-3. Open a text editor (VS Code, gedit, etc.)
-4. Focus the text editor window
-5. Send text from Android app
-6. Text should appear in the editor
+Settings are read in this order (last wins):
 
-## Systemd Service (Optional)
+1. Default: `ws://localhost:8080`, `xdotool`
+2. Environment: `UTTER_RELAY_SERVER=192.168.1.100:8080`
+3. CLI flags: `--server`, `--tool`
 
-Create `/etc/systemd/system/utter-client.service`:
+Example with environment variable:
+```bash
+export UTTER_RELAY_SERVER=192.168.1.100:8080
+utterd
+```
+
+## Running as a service
+
+Create `/etc/systemd/system/utterd.service`:
 
 ```ini
 [Unit]
-Description=Utter Linux Client
+Description=Utter Daemon
 After=network.target
 
 [Service]
 Type=simple
 User=your-username
-WorkingDirectory=/path/to/utter/utterd
-ExecStart=/home/your-username/.local/bin/uv run utterd --server ws://your-server:8080
+Environment="UTTER_RELAY_SERVER=192.168.1.100:8080"
+ExecStart=/path/to/utterd
 Restart=always
-RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-Enable and start:
-
+Enable:
 ```bash
-sudo systemctl enable utter-client
-sudo systemctl start utter-client
-sudo systemctl status utter-client
+sudo systemctl enable utterd
+sudo systemctl start utterd
 ```
-
-View logs:
-
-```bash
-sudo journalctl -u utter-client -f
-```
-
-## Troubleshooting
-
-### Text not appearing
-
-1. Make sure the target window is focused
-2. Check that xdotool/ydotool is installed
-3. For Wayland, make sure ydotool daemon is running:
-   ```bash
-   sudo systemctl status ydotool
-   ```
-
-### Connection issues
-
-1. Check that relay server is running
-2. Verify the server URL is correct
-3. Check firewall settings
-
-### Permissions (ydotool)
-
-ydotool may require root permissions. Run with sudo or add user to input group:
-
-```bash
-sudo usermod -a -G input $USER
-```
-
-Then log out and back in.
