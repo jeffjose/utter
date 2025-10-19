@@ -54,13 +54,19 @@ fn get_platform_info() -> String {
     std::env::consts::OS.to_string()
 }
 
+fn strip_ws_prefix(url: &str) -> &str {
+    url.strip_prefix("ws://")
+        .or_else(|| url.strip_prefix("wss://"))
+        .unwrap_or(url)
+}
+
 /// utterd - Voice dictation from Android to Linux
 #[derive(Parser)]
 #[command(name = "utterd")]
 #[command(about = "utterd - Voice dictation from Android to Linux", long_about = None)]
 struct Args {
     /// WebSocket server URL
-    #[arg(long, default_value = "ws://localhost:8080")]
+    #[arg(long, env = "UTTER_RELAY_SERVER", default_value = "ws://localhost:8080")]
     server: String,
 
     /// Use ydotool instead of xdotool (for Wayland)
@@ -480,7 +486,7 @@ impl UtterClient {
         println!("{}{}Utter{} {}Daemon{}",
             colors::BRIGHT, colors::CYAN, colors::RESET, colors::DIM, colors::RESET);
         println!("{}{} • {}{}\n",
-            colors::GRAY, self.server_url, hostname, colors::RESET);
+            colors::GRAY, strip_ws_prefix(&self.server_url), hostname, colors::RESET);
 
         // Connection loop
         loop {
