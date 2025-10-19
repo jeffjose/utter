@@ -47,10 +47,14 @@ This document outlines the implementation plan for Google OAuth authentication a
 │                                                              │
 │  Linux Client (utterd):                                     │
 │  ┌────────────────────────────────────────┐                │
-│  │ $ utterd --setup                       │                │
+│  │ $ utterd                               │                │
 │  │                                        │                │
-│  │ Opening browser for Google Sign-In... │                │
-│  │ Visit: https://accounts.google.com... │                │
+│  │ 🔑 No authentication found             │                │
+│  │ Starting Google OAuth...               │                │
+│  │                                        │                │
+│  │ 📱 Please visit:                       │                │
+│  │ https://google.com/device              │                │
+│  │ And enter code: ABCD-EFGH              │                │
 │  └────────────────────────────────────────┘                │
 │         ↓                                                    │
 │  Browser: User signs in with Google                        │
@@ -58,29 +62,113 @@ This document outlines the implementation plan for Google OAuth authentication a
 │  utterd receives: ID token + refresh token                 │
 │         ↓                                                    │
 │  Store tokens in ~/.config/utterd/oauth.json               │
-│                                                              │
-│  Android App:                                               │
+│         ↓                                                    │
 │  ┌────────────────────────────────────────┐                │
-│  │ [Sign in with Google] button           │                │
+│  │ ✓ Authenticated as you@gmail.com       │                │
+│  │ ✓ Connected to relay server            │                │
+│  │ 🎤 Ready to receive messages            │                │
+│  └────────────────────────────────────────┘                │
+│                                                              │
+│  On subsequent runs (token exists):                        │
+│  ┌────────────────────────────────────────┐                │
+│  │ $ utterd                               │                │
+│  │ ✓ Authenticated as you@gmail.com       │                │
+│  │ ✓ Connected to relay server            │                │
+│  │ 🎤 Ready to receive messages            │                │
+│  └────────────────────────────────────────┘                │
+│                                                              │
+│  Android App (Multi-screen flow):                          │
+│  ┌────────────────────────────────────────┐                │
+│  │ Screen 1: Sign In                      │                │
+│  │ ┌────────────────────────────────────┐ │                │
+│  │ │  Welcome to Utter                  │ │                │
+│  │ │                                    │ │                │
+│  │ │  [Sign in with Google]             │ │                │
+│  │ └────────────────────────────────────┘ │                │
 │  └────────────────────────────────────────┘                │
 │         ↓                                                    │
-│  Google Play Services handles OAuth                        │
+│  Google Play Services OAuth flow                           │
 │         ↓                                                    │
-│  App receives: ID token                                    │
+│  ┌────────────────────────────────────────┐                │
+│  │ Screen 2: Server Connection            │                │
+│  │ ┌────────────────────────────────────┐ │                │
+│  │ │  Signed in as: you@gmail.com       │ │                │
+│  │ │                                    │ │                │
+│  │ │  Server URL:                       │ │                │
+│  │ │  [ws://relay.utter.app        ]    │ │                │
+│  │ │                                    │ │                │
+│  │ │  [Connect]                         │ │                │
+│  │ └────────────────────────────────────┘ │                │
+│  │  (Default server saved for later)      │                │
+│  └────────────────────────────────────────┘                │
 │         ↓                                                    │
-│  Store token in Android KeyStore                           │
+│  ┌────────────────────────────────────────┐                │
+│  │ Screen 3: Device Selection             │                │
+│  │ ┌────────────────────────────────────┐ │                │
+│  │ │  Select Target Device:             │ │                │
+│  │ │                                    │ │                │
+│  │ │  ○ Work Laptop (online)            │ │                │
+│  │ │  ○ Home Desktop (online)           │ │                │
+│  │ │  ○ Server (offline)                │ │                │
+│  │ │                                    │ │                │
+│  │ │  [Continue]                        │ │                │
+│  │ └────────────────────────────────────┘ │                │
+│  └────────────────────────────────────────┘                │
+│         ↓                                                    │
+│  ┌────────────────────────────────────────┐                │
+│  │ Screen 4: Voice Input (Main)           │                │
+│  │ ┌────────────────────────────────────┐ │                │
+│  │ │  [Work Laptop ▼] ← Tap to switch   │ │                │
+│  │ │                                    │ │                │
+│  │ │  ┌──────────────────────────────┐ │ │                │
+│  │ │  │ Type or speak...             │ │ │                │
+│  │ │  └──────────────────────────────┘ │ │                │
+│  │ │                                    │ │                │
+│  │ │  [🎤 Tap to Speak]                 │ │                │
+│  │ └────────────────────────────────────┘ │                │
+│  │                                        │                │
+│  │  Tap dropdown → Switch between:        │                │
+│  │  • Work Laptop                         │                │
+│  │  • Home Desktop                        │                │
+│  │  (Instant switch, no re-selection)     │                │
+│  └────────────────────────────────────────┘                │
+│                                                              │
+│  Token stored in Android KeyStore                          │
 │                                                              │
 │  Linux Test Client:                                         │
 │  ┌────────────────────────────────────────┐                │
 │  │ $ pnpm start                            │                │
 │  │                                        │                │
-│  │ Sign in with Google:                   │                │
-│  │ Visit: https://...                     │                │
+│  │ 🔑 No authentication found             │                │
+│  │ Starting Google OAuth...               │                │
+│  │                                        │                │
+│  │ 📱 Opening browser for sign-in...      │                │
+│  │ Visit: https://accounts.google.com...  │                │
 │  └────────────────────────────────────────┘                │
 │         ↓                                                    │
-│  Browser-based OAuth flow                                  │
+│  Browser opens → User signs in with Google                 │
 │         ↓                                                    │
 │  Store tokens in ~/.config/utter-client/oauth.json        │
+│         ↓                                                    │
+│  ┌────────────────────────────────────────┐                │
+│  │ ✓ Authentication successful!           │                │
+│  │ You can close browser window           │                │
+│  │                                        │                │
+│  │ Utter Test Client                      │                │
+│  │ ws://localhost:8080 • device-id        │                │
+│  │                                        │                │
+│  │ [Crypto] E2E encryption enabled        │                │
+│  │ Type /help for commands                │                │
+│  │ >                                      │                │
+│  └────────────────────────────────────────┘                │
+│                                                              │
+│  On subsequent runs (token exists):                        │
+│  ┌────────────────────────────────────────┐                │
+│  │ $ pnpm start                            │                │
+│  │ ✓ Using cached OAuth token             │                │
+│  │ ✓ Connected                             │                │
+│  │ >                                      │                │
+│  └────────────────────────────────────────┘                │
 │                                                              │
 └──────────────────────────────────────────────────────────────┘
 
@@ -138,7 +226,7 @@ This document outlines the implementation plan for Google OAuth authentication a
 
 ```bash
 cd relay-server
-npm install google-auth-library dotenv
+pnpm install google-auth-library dotenv
 ```
 
 ### Environment Variables
@@ -606,6 +694,47 @@ plugins {
 }
 ```
 
+### App Navigation Flow
+
+The Android app uses a multi-screen flow for better UX:
+
+```
+SignInActivity → ServerSelectionActivity → DeviceSelectionActivity → VoiceInputActivity
+     (1)                  (2)                      (3)                      (4)
+```
+
+**Screen 1: SignInActivity** - OAuth authentication
+- Welcome screen with "Sign in with Google" button
+- Google Play Services handles OAuth flow
+- Stores ID token in Android KeyStore
+- Auto-skip if already signed in
+
+**Screen 2: ServerSelectionActivity** - Relay server configuration
+- Input field for server URL (default: `ws://relay.utter.app`)
+- Saved in SharedPreferences for future use
+- "Connect" button establishes WebSocket connection
+- Shows connection status
+
+**Screen 3: DeviceSelectionActivity** - Target device selection
+- Fetches list of user's devices from relay server
+- Shows only Linux/target devices (filters out other Android devices)
+- Radio buttons for device selection
+- Shows online/offline status
+- "Continue" button saves selection
+
+**Screen 4: VoiceInputActivity** - Main screen (voice dictation)
+- **Dropdown at top**: `[Work Laptop ▼]` - Tap to switch devices
+- Text input field (EditText with voice input support)
+- "🎤 Tap to Speak" button
+- Messages sent with E2E encryption
+- Device dropdown allows instant switching without going back
+
+**Key Features:**
+- First-time setup: All 4 screens in sequence
+- Subsequent launches: Auto-skip to Screen 4 (if auth + server + device already configured)
+- Device dropdown on main screen for quick switching between targets
+- Settings menu to change server or sign out
+
 ### Implementation Files
 
 #### `android-app/app/src/main/java/com/utter/android/auth/GoogleAuthManager.kt` (NEW)
@@ -826,7 +955,7 @@ class WebSocketClient(
 
 ```bash
 cd linux-test-client
-npm install google-auth-library open
+pnpm install google-auth-library open
 ```
 
 ### Implementation Files
