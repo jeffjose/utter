@@ -127,7 +127,7 @@ class UtterClient:
         table.add_row("Messages:", str(self.messages_received))
 
         if self.last_text:
-            table.add_row("Last Text:", self.last_text)
+            table.add_row("Last Text:", f"↓ {self.last_text}")
 
         if self.last_error:
             table.add_row("Error:", Text(self.last_error, style="bold red"))
