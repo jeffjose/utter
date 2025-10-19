@@ -1,23 +1,9 @@
 mod crypto;
 
 use clap::Parser;
-use crossterm::{
-    event::{self, Event, KeyCode},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
 use crypto::{KeyManager, MessageEncryption, EncryptedMessage};
 use futures_util::{SinkExt, StreamExt};
-use ratatui::{
-    backend::CrosstermBackend,
-    layout::{Alignment, Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
-    Terminal,
-};
 use serde::{Deserialize, Serialize};
-use std::io;
 use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
@@ -119,27 +105,13 @@ enum WsMessage {
 
 #[derive(Clone)]
 struct AppState {
-    status: String,
-    connection_attempts: u32,
-    messages_received: u32,
-    last_text: String,
-    last_error: String,
-    tool_status: String,
     client_id: Option<String>,
-    server_url: String,
 }
 
 impl AppState {
-    fn new(server_url: String, tool_status: String) -> Self {
+    fn new() -> Self {
         Self {
-            status: "Initializing...".to_string(),
-            connection_attempts: 0,
-            messages_received: 0,
-            last_text: String::new(),
-            last_error: String::new(),
-            tool_status,
             client_id: None,
-            server_url,
         }
     }
 }
@@ -154,16 +126,7 @@ struct UtterClient {
 
 impl UtterClient {
     fn new(server_url: String, use_ydotool: bool) -> Self {
-        let tool = if use_ydotool { "ydotool" } else { "xdotool" };
-        let tool_status = match Self::check_tool_available(tool) {
-            true => format!("✓ {} available", tool),
-            false => format!("✗ {} not found", tool),
-        };
-
-        let state = Arc::new(Mutex::new(AppState::new(
-            server_url.clone(),
-            tool_status,
-        )));
+        let state = Arc::new(Mutex::new(AppState::new()));
 
         // Initialize crypto
         let (key_manager, message_encryption) = match KeyManager::new() {
@@ -174,26 +137,22 @@ impl UtterClient {
                         match (km.get_private_key_bytes(), km.get_public_key_bytes()) {
                             (Ok(priv_key), Ok(pub_key)) => {
                                 let enc = MessageEncryption::new(&priv_key, &pub_key);
-                                println!("{}🔒 E2E encryption enabled{}", colors::GREEN, colors::RESET);
                                 (Some(Arc::new(km)), Some(Arc::new(enc)))
                             }
                             _ => {
-                                println!("{}🔓 E2E encryption disabled (key retrieval failed){}",
-                                    colors::YELLOW, colors::RESET);
+                                eprintln!("{}✗ Key retrieval failed{}", colors::RED, colors::RESET);
                                 (None, None)
                             }
                         }
                     }
                     Err(e) => {
-                        eprintln!("{}{}✗{} Failed to initialize keypair: {}",
-                            colors::DIM, colors::RED, colors::RESET, e);
+                        eprintln!("{}✗ Failed to initialize keypair: {}{}", colors::RED, e, colors::RESET);
                         (None, None)
                     }
                 }
             }
             Err(e) => {
-                eprintln!("{}{}✗{} Failed to create KeyManager: {}",
-                    colors::DIM, colors::RED, colors::RESET, e);
+                eprintln!("{}✗ Failed to create KeyManager: {}{}", colors::RED, e, colors::RESET);
                 (None, None)
             }
         };
@@ -239,12 +198,14 @@ impl UtterClient {
     }
 
     async fn handle_message(&self, msg: WsMessage) -> Option<WsMessage> {
-        let mut state = self.state.lock().await;
-
         match msg {
             WsMessage::Connected { client_id } => {
-                state.client_id = Some(client_id);
-                state.status = "Connected".to_string();
+                let mut state = self.state.lock().await;
+                state.client_id = Some(client_id.clone());
+                drop(state);
+
+                println!("{}✓ Connected to relay{}", colors::GREEN, colors::RESET);
+
                 let hostname = get_hostname();
 
                 // Get public key if crypto is enabled
@@ -253,7 +214,6 @@ impl UtterClient {
                 } else {
                     None
                 };
-
 
                 Some(WsMessage::Register {
                     client_type: "target".to_string(),
@@ -266,16 +226,13 @@ impl UtterClient {
                 })
             }
             WsMessage::Registered => {
-                state.status = "Registered - Ready".to_string();
+                println!("{}✓ Ready{}", colors::GREEN, colors::RESET);
                 None
             }
             WsMessage::Text { content, encrypted, nonce, ephemeral_public_key } => {
-                state.messages_received += 1;
-
                 // ENFORCE ENCRYPTION: Reject plaintext messages
                 if !encrypted.unwrap_or(false) {
-                    let err_msg = "REJECTED: Plaintext messages not allowed. E2E encryption is REQUIRED.";
-                    state.last_error = err_msg.to_string();
+                    println!("{}✗ Rejected plaintext message{}", colors::RED, colors::RESET);
                     return None;
                 }
 
@@ -292,27 +249,26 @@ impl UtterClient {
                     match enc.decrypt(&encrypted_msg, "") {
                         Ok(plaintext) => plaintext,
                         Err(e) => {
-                            let err_msg = format!("Decryption failed: {}", e);
-                            state.last_error = err_msg.clone();
+                            println!("{}✗ Decryption failed: {}{}", colors::RED, e, colors::RESET);
                             return None;
                         }
                     }
                 } else {
-                    state.last_error = "Received encrypted message but crypto not initialized".to_string();
+                    println!("{}✗ Crypto not initialized{}", colors::RED, colors::RESET);
                     return None;
                 };
 
-                // Truncate for display
+                // Print received message
                 let display_text = if plaintext.len() > 50 {
                     format!("{}...", &plaintext[..50])
                 } else {
                     plaintext.clone()
                 };
-                state.last_text = display_text;
+                println!("{}→ {}{}{}", colors::CYAN, colors::DIM, display_text, colors::RESET);
 
                 // Simulate typing
                 if let Err(e) = self.simulate_typing(&plaintext) {
-                    state.last_error = e;
+                    println!("{}✗ Typing error: {}{}", colors::RED, e, colors::RESET);
                 }
                 None
             }
@@ -322,27 +278,20 @@ impl UtterClient {
     }
 
     async fn connect(&self) -> Result<(), String> {
-        let mut state = self.state.lock().await;
-        state.connection_attempts += 1;
-        state.status = "Connecting...".to_string();
-        state.last_error = String::new();
-        state.client_id = None;
-        drop(state);
-
         // Connect to WebSocket
         let (ws_stream, _) = connect_async(&self.server_url)
             .await
             .map_err(|e| {
                 if e.to_string().contains("Connection refused") || e.to_string().contains("111") {
-                    "Server not running - start relay server first".to_string()
+                    "Server not running".to_string()
                 } else if e.to_string().contains("getaddrinfo failed") {
                     "Cannot resolve hostname".to_string()
                 } else if e.to_string().contains("Multiple exceptions") {
-                    "Server not reachable - check server URL".to_string()
+                    "Server not reachable".to_string()
                 } else {
                     let err_str = e.to_string();
-                    if err_str.len() > 80 {
-                        err_str[..80].to_string()
+                    if err_str.len() > 60 {
+                        err_str[..60].to_string()
                     } else {
                         err_str
                     }
@@ -350,11 +299,6 @@ impl UtterClient {
             })?;
 
         let (mut write, mut read) = ws_stream.split();
-
-        // Update status
-        let mut state = self.state.lock().await;
-        state.status = "Connected".to_string();
-        drop(state);
 
         // Message loop
         loop {
@@ -367,34 +311,26 @@ impl UtterClient {
                                     if let Some(response) = self.handle_message(ws_msg).await {
                                         let json = serde_json::to_string(&response).unwrap();
                                         if let Err(e) = write.send(Message::Text(json)).await {
-                                            let mut state = self.state.lock().await;
-                                            state.last_error = format!("Send error: {}", e);
+                                            println!("{}✗ Send error: {}{}", colors::RED, e, colors::RESET);
                                             break;
                                         }
                                     }
                                 }
                                 Err(_) => {
-                                    let mut state = self.state.lock().await;
-                                    state.last_error = "Invalid JSON received".to_string();
+                                    println!("{}✗ Invalid JSON received{}", colors::RED, colors::RESET);
                                 }
                             }
                         }
                         Some(Ok(Message::Close(_))) => {
-                            let mut state = self.state.lock().await;
-                            state.status = "Disconnected".to_string();
-                            state.last_error = "Connection closed normally".to_string();
+                            println!("{}✗ Connection closed{}", colors::YELLOW, colors::RESET);
                             break;
                         }
                         Some(Err(e)) => {
-                            let mut state = self.state.lock().await;
-                            state.status = "Disconnected".to_string();
-                            state.last_error = format!("Connection lost unexpectedly: {}", e);
+                            println!("{}✗ Connection lost: {}{}", colors::RED, e, colors::RESET);
                             break;
                         }
                         None => {
-                            let mut state = self.state.lock().await;
-                            state.status = "Disconnected".to_string();
-                            state.last_error = "Connection closed".to_string();
+                            println!("{}✗ Connection closed{}", colors::YELLOW, colors::RESET);
                             break;
                         }
                         _ => {}
@@ -402,163 +338,6 @@ impl UtterClient {
                 }
             }
         }
-
-        Ok(())
-    }
-
-    async fn run_with_display(&self) -> Result<(), Box<dyn std::error::Error>> {
-        // Setup terminal
-        enable_raw_mode()?;
-        let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen)?;
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
-
-        let state = self.state.clone();
-        let client = self.clone();
-
-        // Spawn connection task
-        let conn_handle = tokio::spawn(async move {
-            loop {
-                // Try to connect
-                if let Err(e) = client.connect().await {
-                    let mut state = client.state.lock().await;
-                    if e.contains("Connection refused") {
-                        state.status = "Connection Refused".to_string();
-                    } else if e.contains("Timeout") {
-                        state.status = "Timeout".to_string();
-                    } else {
-                        state.status = "Connection Error".to_string();
-                    }
-                    state.last_error = e;
-                }
-
-                // Countdown before reconnecting
-                for remaining in (1..=5).rev() {
-                    let mut state = client.state.lock().await;
-                    state.status = format!("Reconnecting in {}s...", remaining);
-                    drop(state);
-                    sleep(Duration::from_millis(1000)).await;
-                }
-            }
-        });
-
-        // UI loop
-        loop {
-            let state = state.lock().await.clone();
-
-            terminal.draw(|f| {
-                let chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .margin(2)
-                    .constraints([Constraint::Min(0)].as_ref())
-                    .split(f.area());
-
-                // Build status lines
-                let mut lines = vec![];
-
-                // Status line with color
-                let status_style = if state.status == "Connected"
-                    || state.status == "Registered - Ready"
-                {
-                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
-                } else if state.status.contains("Connecting") || state.status.contains("Reconnecting")
-                {
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
-                };
-
-                lines.push(Line::from(vec![
-                    Span::styled("Status:  ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                    Span::styled(&state.status, status_style),
-                ]));
-
-                lines.push(Line::from(vec![
-                    Span::styled("Server:  ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                    Span::styled(&state.server_url, Style::default().fg(Color::White)),
-                ]));
-
-                if let Some(ref client_id) = state.client_id {
-                    lines.push(Line::from(vec![
-                        Span::styled("Client ID:  ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                        Span::styled(client_id, Style::default().fg(Color::White)),
-                    ]));
-                }
-
-                lines.push(Line::from(vec![
-                    Span::styled("Tool:  ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                    Span::styled(&state.tool_status, Style::default().fg(Color::White)),
-                ]));
-
-                lines.push(Line::from(vec![
-                    Span::styled("Messages:  ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                    Span::styled(state.messages_received.to_string(), Style::default().fg(Color::White)),
-                ]));
-
-                if !state.last_text.is_empty() {
-                    lines.push(Line::from(vec![
-                        Span::styled("Last Text:  ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                        Span::styled(&state.last_text, Style::default().fg(Color::White)),
-                    ]));
-                }
-
-                if !state.last_error.is_empty() {
-                    lines.push(Line::from(vec![
-                        Span::styled("Error:  ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                        Span::styled(&state.last_error, Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                    ]));
-                }
-
-                // Build subtitle
-                let subtitle = if state.status == "Registered - Ready" {
-                    "Waiting for voice input from Android..."
-                } else if state.connection_attempts > 0 {
-                    &format!("Attempt #{}", state.connection_attempts)
-                } else {
-                    ""
-                };
-
-                let block = Block::default()
-                    .title("🎤 utterd")
-                    .title_alignment(Alignment::Left)
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Blue));
-
-                let block = if !subtitle.is_empty() {
-                    block.title_bottom(subtitle)
-                } else {
-                    block
-                };
-
-                let paragraph = Paragraph::new(lines)
-                    .block(block)
-                    .alignment(Alignment::Left);
-
-                f.render_widget(paragraph, chunks[0]);
-            })?;
-
-            // Check for keyboard input (Ctrl+C)
-            if event::poll(Duration::from_millis(100))? {
-                if let Event::Key(key) = event::read()? {
-                    if key.code == KeyCode::Char('c')
-                        && key.modifiers.contains(event::KeyModifiers::CONTROL)
-                    {
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Cleanup
-        conn_handle.abort();
-        disable_raw_mode()?;
-        execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-        terminal.show_cursor()?;
-
-        println!("\n{}✓ Shutdown complete{}", colors::GREEN, colors::RESET);
 
         Ok(())
     }
@@ -586,7 +365,21 @@ impl UtterClient {
         println!("{}{}{}", colors::GRAY, "─".repeat(60), colors::RESET);
         println!();
 
-        self.run_with_display().await
+        // Connection loop
+        loop {
+            // Try to connect
+            if let Err(e) = self.connect().await {
+                println!("{}✗ {}{}", colors::RED, e, colors::RESET);
+            }
+
+            // Reconnect after 5 seconds
+            print!("\r{}Reconnecting in 5s...{}", colors::YELLOW, colors::RESET);
+            use std::io::Write;
+            std::io::stdout().flush().unwrap();
+            sleep(Duration::from_secs(5)).await;
+            print!("\r\x1b[K"); // Clear the line
+            std::io::stdout().flush().unwrap();
+        }
     }
 }
 
