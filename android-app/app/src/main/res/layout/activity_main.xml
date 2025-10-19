@@ -80,6 +80,28 @@
         app:layout_constraintTop_toBottomOf="@id/statusText"
         android:layout_marginTop="24dp" />
 
+    <!-- Target Device Selection -->
+    <TextView
+        android:id="@+id/targetLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Target Device:"
+        android:textSize="14sp"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/divider"
+        android:layout_marginTop="24dp" />
+
+    <Spinner
+        android:id="@+id/targetDeviceSpinner"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:enabled="false"
+        android:minHeight="48dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/targetLabel"
+        android:layout_marginTop="8dp" />
+
     <!-- Text Input Label -->
     <TextView
         android:id="@+id/textInputLabel"
@@ -88,7 +110,7 @@
         android:text="Voice Input:"
         android:textSize="14sp"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/divider"
+        app:layout_constraintTop_toBottomOf="@id/targetDeviceSpinner"
         android:layout_marginTop="24dp" />
 
     <!-- Text Input Field -->

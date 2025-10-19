@@ -2,34 +2,43 @@
 
 ## Overview
 
-Utter uses a two-layer security model for device pairing:
+Utter uses a simplified single-layer security model based on Google OAuth, similar to Tailscale:
 
 1. **User Authentication** (Google OAuth) - Identifies the account owner
-2. **Device Pairing** (QR Code) - Links specific devices to that account
+2. **Trusted Pool** - All devices under same account can communicate
+3. **Target Selection** - User explicitly selects destination device
+4. **End-to-End Encryption** - Hybrid encryption (DH + AES) for message security
 
-This approach provides both security (only your devices can connect) and convenience (no PIN typing required).
+This approach provides both security and convenience with minimal setup time.
 
 ---
 
-## Two-Layer Security Model
+## Security Model
 
-### Layer 1: User Identity (Google OAuth)
+### Single-Layer Authentication (Google OAuth)
 **Question:** "Who are you?"
 
-Both Linux client and Android app authenticate with Google to prove account ownership.
+All devices (Linux clients, Android apps) authenticate with Google OAuth to prove account ownership.
 
-### Layer 2: Device Pairing (QR Code)
-**Question:** "Which devices belong to you?"
+**Result:** All authenticated devices belong to a "trusted pool" under that Google account.
 
-Devices under the same Google account are paired using a one-time QR code for quick, secure linking.
+### Target Selection
+**Question:** "Where should this message go?"
+
+The Android app user explicitly selects which Linux device to send messages to from a dropdown list.
+
+### End-to-End Encryption
+**Question:** "How do we keep messages private?"
+
+Messages are encrypted using hybrid encryption (Diffie-Hellman key exchange + AES-256), ensuring the relay server cannot read message content.
 
 ---
 
-## Pairing Flow
+## Simplified Pairing Flow
 
-### Step 1: Authenticate User (Google OAuth)
+### Step 1: Device Registration
 
-#### Linux Client:
+#### Linux Client/Server:
 ```
 ┌─────────────────────────────────┐
 │  Welcome to Utter!              │
@@ -41,16 +50,20 @@ Browser opens → User logs into Google
     ↓
 Linux gets: access_token + user_id (you@gmail.com)
     ↓
+Generates Ed25519 key pair (for E2EE)
+    ↓
 Sends to relay server
 ```
 
 **Server receives:**
 ```json
 {
-  "type": "authenticate",
+  "type": "register",
   "token": "google_oauth_token",
   "device_type": "linux",
-  "device_id": "linux-laptop-001"
+  "device_id": "linux-work-laptop",
+  "device_name": "Work Laptop",
+  "public_key": "ed25519_public_key_base64"
 }
 ```
 
@@ -66,104 +79,145 @@ Android OAuth (Google Play Services)
     ↓
 Android gets: access_token + user_id (you@gmail.com)
     ↓
+Generates Ed25519 key pair (for E2EE)
+    ↓
 Sends to relay server
 ```
 
 **Server receives:**
 ```json
 {
-  "type": "authenticate",
+  "type": "register",
   "token": "google_oauth_token",
   "device_type": "android",
-  "device_id": "android-phone-001"
+  "device_id": "android-pixel-7",
+  "device_name": "Pixel 7",
+  "public_key": "ed25519_public_key_base64"
 }
 ```
 
 **Relay Server:**
 - Verifies token with Google
 - Extracts `user_id` (email)
-- Registers device as belonging to that user
-- Stores: `{device_id, user_id, device_type, connection_status}`
+- Registers device with public key
+- Stores: `{device_id, user_id, device_type, device_name, public_key, connection_status}`
 
 ---
 
-### Step 2: Pair Devices (QR Code)
+### Step 2: Target Selection & Messaging
 
-#### Linux Client Generates QR:
+#### Android App UI:
 ```
 ┌─────────────────────────────────┐
 │  Signed in as: you@gmail.com    │
 │                                 │
-│  Pair Android Device:           │
-│  ┌─────────────────┐            │
-│  │  ███  ████  ███ │            │
-│  │  ████  ██  ████ │            │
-│  │  ███  ████  ███ │            │
-│  └─────────────────┘            │
+│  Target: [Work Laptop ▼]        │  ← Dropdown of online devices
+│          • Work Laptop (online) │
+│          • Home Desktop (online)│
 │                                 │
-│  Code expires in: 4:58          │
+│  ┌───────────────────────────┐  │
+│  │ Type or speak...          │  │
+│  └───────────────────────────┘  │
+│                                 │
+│  [🎤 Tap to Speak]              │
 └─────────────────────────────────┘
 ```
 
-**QR Code contains:**
-```json
-{
-  "pairing_token": "abc123xyz",
-  "user_id": "you@gmail.com",
-  "device_id": "linux-laptop-001",
-  "expires_at": 1697654400,
-  "server_url": "wss://relay.utter.app"
-}
-```
-
-**Linux sends to server:**
-```json
-{
-  "type": "init_pairing",
-  "pairing_token": "abc123xyz",
-  "ttl": 300
-}
-```
-
-#### Android Scans QR:
-```
-┌─────────────────────────────────┐
-│  Signed in as: you@gmail.com    │
-│                                 │
-│  [Scan QR Code to Pair]         │ ← Opens camera
-└─────────────────────────────────┘
-    ↓
-Scans QR code → Extracts pairing_token
-    ↓
-Sends to relay server
-```
+**Flow:**
+1. Android fetches list of user's devices from relay server
+2. Filters for `device_type: "linux"` and `status: "online"`
+3. User selects target from dropdown
+4. User speaks or types message
+5. Message encrypted and sent to selected target
 
 **Android sends to server:**
 ```json
 {
-  "type": "complete_pairing",
-  "pairing_token": "abc123xyz"
+  "type": "message",
+  "from": "android-pixel-7",
+  "to": "linux-work-laptop",
+  "content": "encrypted_payload_base64",
+  "encrypted": true,
+  "key_exchange": {
+    "ephemeral_public_key": "dh_public_key_base64"
+  }
 }
 ```
 
 **Relay Server:**
-1. Verifies Android's `user_id` matches QR's `user_id`
-2. Checks token not expired
-3. Checks token not already used
-4. Creates session linking the two devices
-5. Marks token as used (one-time only)
+1. Verifies both devices belong to same `user_id`
+2. Forwards encrypted message (cannot decrypt it)
+3. Routes to target device
 
-**Server broadcasts to both devices:**
-```json
-{
-  "type": "paired",
-  "session_id": "sess_xyz789",
-  "paired_device": {
-    "device_id": "...",
-    "device_type": "...",
-    "name": "Pixel 7"
-  }
-}
+**Linux receives and decrypts:**
+1. Receives encrypted message
+2. Performs DH key exchange using ephemeral keys
+3. Derives AES-256 key from shared secret
+4. Decrypts message content
+5. Types the text via keyboard simulation
+
+---
+
+## End-to-End Encryption (Hybrid)
+
+### Key Generation (One-Time, Per Device)
+
+Each device generates a long-term Ed25519 key pair on first launch:
+
+```typescript
+// On device first launch
+const keyPair = generateEd25519KeyPair();
+localStorage.save('private_key', keyPair.privateKey); // Never leaves device
+uploadToServer({
+  device_id: 'my-device',
+  public_key: keyPair.publicKey  // Shared via server
+});
+```
+
+### Message Encryption Flow (Per Message)
+
+**Hybrid approach using Diffie-Hellman + AES:**
+
+```
+Sender (Android):
+1. Generate ephemeral DH key pair (curve25519)
+2. Fetch recipient's public key from server
+3. Perform DH key exchange: shared_secret = DH(my_ephemeral_private, recipient_public)
+4. Derive AES-256 key: aes_key = HKDF(shared_secret)
+5. Encrypt message: ciphertext = AES-GCM(message, aes_key)
+6. Send: {ciphertext, ephemeral_public_key}
+
+Relay Server:
+- Cannot decrypt (doesn't have private keys)
+- Only routes encrypted blobs
+
+Receiver (Linux):
+1. Receive {ciphertext, sender_ephemeral_public_key}
+2. Perform DH key exchange: shared_secret = DH(my_private, sender_ephemeral_public)
+3. Derive same AES key: aes_key = HKDF(shared_secret)
+4. Decrypt: message = AES-GCM-decrypt(ciphertext, aes_key)
+```
+
+**Properties:**
+- ✅ Forward secrecy (ephemeral keys rotated per message/session)
+- ✅ Server cannot read messages (no private keys)
+- ✅ Authenticated encryption (AES-GCM provides integrity)
+- ✅ Fast encryption (AES is hardware-accelerated)
+
+### Trust Model: Trust on First Use (TOFU)
+
+Similar to SSH:
+
+```
+First connection:
+1. Device uploads public key during OAuth registration
+2. Server distributes public keys to devices in same trusted pool
+3. Devices trust keys on first connection
+4. Optional: Show key fingerprints in settings for manual verification
+
+Key rotation:
+- If device's public key changes, warn user
+- Require re-authentication for new key
 ```
 
 ---
@@ -172,17 +226,31 @@ Sends to relay server
 
 ### Against Random Attacker
 
-**Scenario:** Attacker sees your QR code on screen
+**Scenario:** Attacker tries to intercept messages
 
 ```
-Attacker scans QR with their phone
+Attacker intercepts encrypted message
     ↓
-Attacker's Google account: attacker@evil.com
-Your QR user_id: you@gmail.com
+Attacker has: ciphertext + ephemeral_public_key
+Attacker needs: recipient's private key (not available)
     ↓
-Server checks: attacker@evil.com ≠ you@gmail.com
+Cannot derive shared secret
     ↓
-❌ Pairing rejected: "User mismatch"
+❌ Cannot decrypt message
+```
+
+### Against Malicious Server Operator
+
+**Scenario:** Relay server operator tries to read messages
+
+```
+Server has: ciphertext + ephemeral_public_key + sender/recipient public keys
+Server needs: recipient's private key (stored only on device)
+    ↓
+Cannot derive shared secret
+    ↓
+❌ Cannot decrypt message content
+    ✅ Can see metadata: sender, recipient, timestamp, message length
 ```
 
 ### Against Account Hijacker
@@ -190,47 +258,17 @@ Server checks: attacker@evil.com ≠ you@gmail.com
 **Scenario:** Attacker has your Google password
 
 ```
-Attacker logs into their device with your Google account
+Attacker logs in with your Google account
     ↓
-Attacker's device now authenticated as: you@gmail.com
+Attacker's device registers with relay server
     ↓
-But attacker doesn't have QR code (it's on your screen)
+Attacker appears in your trusted pool
     ↓
-Can't complete pairing without scanning QR
-    ↓
-⚠️ You'd see unauthorized device in account dashboard
+⚠️ Mitigation: Check connected devices in web dashboard
+⚠️ Revoke unauthorized devices immediately
 ```
 
-### Against Token Replay
-
-**Scenario:** Attacker intercepts QR code data
-
-```
-Attacker saves QR data for later
-    ↓
-You complete pairing (token gets marked as used)
-    ↓
-Attacker tries to use saved QR data
-    ↓
-Server checks: Token already used
-    ↓
-❌ Pairing rejected: "Token already consumed"
-```
-
-### Against Token Theft
-
-**Scenario:** Attacker steals pairing token before you scan
-
-```
-QR displayed at: 10:00:00
-Token expires at: 10:05:00
-    ↓
-At 10:06:00, attacker tries to use token
-    ↓
-Server checks: Current time > expires_at
-    ↓
-❌ Pairing rejected: "Token expired"
-```
+**Future improvement:** Add device approval flow (like Tailscale)
 
 ---
 
@@ -240,46 +278,51 @@ Server checks: Current time > expires_at
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│ 1. AUTHENTICATE                                          │
+│ 1. REGISTRATION                                          │
 ├──────────────────────────────────────────────────────────┤
 │                                                          │
-│  Linux: Sign in with Google                             │
+│  Linux: Sign in with Google + Generate key pair         │
 │         ↓                                                │
-│  Server: "Linux device for you@gmail.com registered"    │
+│  Server: Store {device_id, user_id, public_key}         │
 │                                                          │
-│  Android: Sign in with Google                           │
+│  Android: Sign in with Google + Generate key pair       │
 │           ↓                                              │
-│  Server: "Android device for you@gmail.com registered"  │
+│  Server: Store {device_id, user_id, public_key}         │
+│                                                          │
+│  ✅ Both devices now in trusted pool                    │
 │                                                          │
 └──────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────┐
-│ 2. PAIR DEVICES                                          │
+│ 2. TARGET SELECTION                                      │
 ├──────────────────────────────────────────────────────────┤
 │                                                          │
-│  Linux: Generate pairing token → Display QR             │
-│         ↓                                                │
-│  Server: Store pending pairing (token, user_id)         │
-│                                                          │
-│  Android: Scan QR → Extract token                       │
+│  Android: Request device list from server               │
 │           ↓                                              │
-│  Server: Verify user_id matches                         │
-│          Create session                                  │
-│          ↓                                               │
-│  ✅ Both devices: "Paired successfully"                 │
+│  Server: Return all Linux devices for you@gmail.com     │
+│          [{id: "linux-work", name: "Work Laptop"}, ...]  │
+│           ↓                                              │
+│  Android: Show dropdown with devices                    │
+│           ↓                                              │
+│  User: Select "Work Laptop"                             │
 │                                                          │
 └──────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────┐
-│ 3. USE                                                   │
+│ 3. ENCRYPTED MESSAGING                                   │
 ├──────────────────────────────────────────────────────────┤
 │                                                          │
-│  Android: Speak → Text sent to session                  │
-│                                                          │
-│  Server: Find paired Linux device in same session       │
-│          Route message                                   │
-│                                                          │
-│  Linux: Receive → Simulate keyboard input               │
+│  Android: User speaks "Hello world"                     │
+│           ↓                                              │
+│  Android: Fetch Work Laptop's public key               │
+│           Generate ephemeral DH key pair                 │
+│           Encrypt message with hybrid encryption         │
+│           ↓                                              │
+│  Server: Route encrypted blob to Work Laptop            │
+│          (Cannot read content)                           │
+│           ↓                                              │
+│  Linux: Decrypt message                                 │
+│         Type "Hello world" via keyboard                  │
 │                                                          │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -306,34 +349,15 @@ interface Device {
   user_id: string;        // Owner's Google account
   device_type: 'linux' | 'android';
   device_name: string;    // User-friendly name
+  public_key: string;     // Ed25519 public key for E2EE
   connection_status: 'online' | 'offline';
+  websocket?: WebSocket;  // For message routing
   last_connected: Date;
   created_at: Date;
 }
 ```
 
-#### Sessions
-```typescript
-interface Session {
-  session_id: string;
-  user_id: string;
-  linux_device_id: string;
-  android_device_id: string;
-  created_at: Date;
-  last_active: Date;
-}
-```
-
-#### Pairing Tokens (Temporary)
-```typescript
-interface PairingToken {
-  token: string;
-  user_id: string;
-  initiating_device_id: string;
-  expires_at: Date;
-  used: boolean;
-}
-```
+**No Sessions or Pairing Tokens needed!**
 
 ---
 
@@ -346,29 +370,51 @@ interface PairingToken {
 {
   "google-auth-library": "^9.0.0",
   "ws": "^8.14.0",
-  "dotenv": "^16.3.0"
+  "dotenv": "^16.3.0",
+  "@noble/curves": "^1.3.0",
+  "@noble/hashes": "^1.3.3"
 }
 ```
 
 **Key Modules:**
 - `auth.ts` - Google OAuth token verification
-- `pairing.ts` - QR token generation and validation
-- `sessions.ts` - Device session management
-- `routes.ts` - Message routing logic
+- `devices.ts` - Device registry management
+- `routing.ts` - Message routing logic
+- `crypto.ts` - Public key distribution (server doesn't decrypt)
 
-### Linux Client (Python)
+### Linux Client/Server (Python)
 
 **Dependencies:**
 ```txt
 google-auth-oauthlib==1.1.0
-qrcode==7.4.2
 websockets==12.0
+cryptography==41.0.0
+PyNaCl==1.5.0
 ```
 
 **Key Modules:**
 - `auth.py` - Google OAuth flow (browser-based)
-- `pairing.py` - QR code generation and display
+- `crypto.py` - Hybrid encryption (DH + AES)
 - `client.py` - WebSocket connection and message handling
+- `keyboard.py` - Keyboard simulation (existing)
+
+### Linux Test Client (TypeScript)
+
+**Dependencies:**
+```json
+{
+  "ws": "^8.14.0",
+  "@noble/curves": "^1.3.0",
+  "@noble/hashes": "^1.3.3",
+  "readline": "^1.3.0"
+}
+```
+
+**Purpose:**
+- REPL interface for testing
+- Types messages and sends via relay server
+- No microphone needed
+- Simulates Android app behavior
 
 ### Android App (Kotlin)
 
@@ -376,32 +422,44 @@ websockets==12.0
 ```kotlin
 // build.gradle
 implementation 'com.google.android.gms:play-services-auth:20.7.0'
-implementation 'com.google.zxing:core:3.5.2'
-implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
 implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+implementation 'com.google.crypto.tink:tink-android:1.10.0'
 ```
 
 **Key Components:**
 - `GoogleAuthActivity.kt` - Google Sign-In
-- `QRScanActivity.kt` - QR code scanning
+- `DeviceListViewModel.kt` - Fetch and manage device list
+- `CryptoManager.kt` - Hybrid encryption implementation
 - `WebSocketClient.kt` - Server communication
 
 ---
 
-## Benefits Over PIN Approach
+## Benefits Over QR Code Approach
 
-| Feature | PIN-Based | Google OAuth + QR |
-|---------|-----------|-------------------|
-| **Typing required** | ❌ 6 digits to type | ✅ Zero typing |
-| **Pairing speed** | ~30 seconds | ~5 seconds |
-| **Multi-device support** | Manual re-pair each | Auto-recognizes account |
-| **Device management** | No central view | Web dashboard |
-| **Revocation** | Manual unlink | Revoke from account settings |
-| **Security** | PIN could be guessed | Google auth required |
-| **Proximity check** | ❌ PIN can be shared remotely | ✅ Must scan QR on screen |
-| **One-time use** | PIN can be reused | ✅ Token single-use |
-| **Offline pairing** | ✅ Works offline | ❌ Requires internet |
-| **Privacy** | ✅ Server blind to identity | ⚠️ Server knows Google account |
+| Feature | **QR Code (Old)** | **OAuth Only (New)** |
+|---------|-------------------|----------------------|
+| **Setup steps** | 2 layers (OAuth + QR) | 1 layer (OAuth only) |
+| **Setup time** | ~30 seconds | ~10 seconds |
+| **Pairing process** | Generate + scan QR | Automatic |
+| **Multi-device** | Manual pair each combo | Automatic pool |
+| **Switching targets** | Re-pair required | Instant dropdown switch |
+| **Device management** | Complex session tracking | Simple device list |
+| **E2EE** | Can add | Built-in hybrid encryption |
+| **Code complexity** | High (tokens, sessions, QR) | Low (device registry only) |
+| **User experience** | Cumbersome | Seamless (like Tailscale) |
+
+---
+
+## Comparison to Tailscale
+
+| Aspect | **Tailscale** | **Utter** |
+|--------|---------------|-----------|
+| **Authentication** | OAuth (Google/GitHub/etc) | Google OAuth |
+| **Device trust** | Implicit (all devices trusted) | Implicit (trusted pool) |
+| **Target selection** | Automatic mesh network | Manual dropdown selection |
+| **Encryption** | WireGuard (E2EE) | Hybrid DH + AES (E2EE) |
+| **Use case** | VPN mesh network | Voice-to-text relay |
+| **Server role** | Coordination only | Message routing |
 
 ---
 
@@ -409,45 +467,22 @@ implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 
 ### Phase 3: UX Improvements
 - Auto-reconnect with saved session
-- Push notifications for pairing requests
-- Device nicknames (e.g., "Work Laptop", "Personal Phone")
-- Multiple simultaneous sessions
+- Push notifications for incoming messages
+- Device nicknames (e.g., "Work Laptop", "Personal Desktop")
+- Last-used target memory
+- Device online/offline status indicators
 
 ### Phase 4: Enhanced Security
-- End-to-end encryption (E2EE) using session keys
-- Public key exchange during pairing
-- Server becomes zero-knowledge relay
-- Perfect forward secrecy
+- Device approval flow (Tailscale-style)
+- Key fingerprint verification UI
+- Automatic key rotation policy
+- Audit log of connected devices
 
 ### Phase 5: Advanced Features
-- NFC pairing as alternative to QR
-- Bluetooth Low Energy (BLE) for local pairing
-- Device trust levels (e.g., "Always allow" vs "Ask each time")
-- Geofencing (only allow pairing in trusted locations)
-
----
-
-## Alternatives Considered
-
-### 1. PIN-Based Pairing
-**Pros:** Works offline, more private
-**Cons:** Requires typing, slower, no multi-device management
-**Decision:** Rejected in favor of better UX
-
-### 2. NFC Pairing
-**Pros:** Very fast, tap-to-pair
-**Cons:** Requires NFC hardware, Linux support limited
-**Decision:** Possible future addition
-
-### 3. Bluetooth Pairing
-**Pros:** Works offline, no typing
-**Cons:** Range limited, complex implementation
-**Decision:** QR code simpler to implement
-
-### 4. Email-Based Pairing
-**Pros:** Familiar flow
-**Cons:** Slow (email delivery), requires email client
-**Decision:** QR code faster and more secure
+- Multi-recipient messages (broadcast to multiple Linux devices)
+- Group messaging within trusted pool
+- File transfer support (encrypted)
+- Web dashboard for device management
 
 ---
 
@@ -457,26 +492,27 @@ implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 - ✅ Your Google account email
 - ✅ Which devices belong to you
 - ✅ When devices are online/offline
-- ✅ Message metadata (timestamp, length)
-- ✅ Message content (plaintext until Phase 4 E2EE)
+- ✅ Message metadata (sender, recipient, timestamp, length)
+- ❌ Message content (encrypted end-to-end)
 
-### What the Server Doesn't Know (Future with E2EE):
-- ❌ Actual text content (encrypted)
+### What the Server Doesn't Know:
+- ❌ Actual text content (encrypted with E2EE)
 - ❌ Your Google password (OAuth token only)
 - ❌ Private keys (stored locally on devices)
 
 ### Recommendations:
 - Self-host relay server for maximum privacy
-- Or use E2EE in Phase 4 for hosted solution
-- Regularly audit paired devices in dashboard
+- Regularly audit connected devices in dashboard
 - Revoke access for lost/stolen devices immediately
+- Enable device approval flow in Phase 4
 
 ---
 
 ## References
 
 - [Google OAuth 2.0 Documentation](https://developers.google.com/identity/protocols/oauth2)
-- [Google Sign-In for Android](https://developers.google.com/identity/sign-in/android)
-- [Google Auth Library for Python](https://google-auth.readthedocs.io/)
-- [QR Code Security Best Practices](https://owasp.org/www-community/vulnerabilities/QR_Code)
+- [Tailscale Architecture](https://tailscale.com/blog/how-tailscale-works/)
+- [Diffie-Hellman Key Exchange](https://en.wikipedia.org/wiki/Diffie%E2%80%93Hellman_key_exchange)
+- [NaCl Crypto Library](https://nacl.cr.yp.to/)
+- [Signal Protocol](https://signal.org/docs/)
 - [WebSocket Security](https://datatracker.ietf.org/doc/html/rfc6455#section-10)

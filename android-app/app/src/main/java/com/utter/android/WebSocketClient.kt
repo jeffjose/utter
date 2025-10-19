@@ -122,5 +122,26 @@ class WebSocketClient(private val serverUrl: String) {
         }
     }
 
+    fun sendTextToDevice(text: String, targetDeviceId: String): Boolean {
+        if (!isConnected || webSocket == null) {
+            return false
+        }
+
+        return try {
+            val message = JSONObject().apply {
+                put("type", "message")
+                put("to", targetDeviceId)
+                put("content", text)
+                put("timestamp", System.currentTimeMillis())
+            }
+            Log.d(TAG, "Sending message to $targetDeviceId: $text")
+            webSocket?.send(message.toString()) ?: false
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to send message: ${e.message}")
+            listener?.onError("Failed to send: ${e.message}")
+            false
+        }
+    }
+
     fun isConnected(): Boolean = isConnected
 }

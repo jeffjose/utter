@@ -6,25 +6,41 @@ import android.os.Handler
 import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
+import android.widget.Spinner
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+data class Device(
+    val deviceId: String,
+    val deviceName: String,
+    val deviceType: String,
+    val status: String
+) {
+    override fun toString(): String {
+        return "$deviceName (${if (status == "online") "●" else "○"})"
+    }
+}
+
 class MainActivity : AppCompatActivity() {
 
     private lateinit var serverUrlInput: EditText
     private lateinit var connectButton: Button
     private lateinit var statusText: TextView
+    private lateinit var targetDeviceSpinner: Spinner
     private lateinit var textInput: EditText
     private lateinit var sendButton: Button
 
     private var webSocketClient: WebSocketClient? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var autoSendRunnable: Runnable? = null
+    private val deviceList = mutableListOf<Device>()
+    private lateinit var deviceAdapter: ArrayAdapter<Device>
 
     // Auto-send delay in milliseconds (2 seconds)
     private val AUTO_SEND_DELAY = 2000L
@@ -56,8 +72,13 @@ class MainActivity : AppCompatActivity() {
         serverUrlInput = findViewById(R.id.serverUrlInput)
         connectButton = findViewById(R.id.connectButton)
         statusText = findViewById(R.id.statusText)
+        targetDeviceSpinner = findViewById(R.id.targetDeviceSpinner)
         textInput = findViewById(R.id.textInput)
         sendButton = findViewById(R.id.sendButton)
+
+        // Initialize device spinner
+        deviceAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, deviceList)
+        targetDeviceSpinner.adapter = deviceAdapter
 
         // Set default server URL based on whether running on emulator or physical device
         serverUrlInput.setText(getDefaultServerUrl())
@@ -124,7 +145,12 @@ class MainActivity : AppCompatActivity() {
         webSocketClient?.setListener(object : WebSocketClient.ConnectionListener {
             override fun onConnected() {
                 runOnUiThread {
-                    updateStatus("Connected", true)
+                    updateStatus("Connected - Fetching devices...", true)
+                }
+                // Fetch available devices after connecting
+                fetchDeviceList()
+                runOnUiThread {
+                    updateStatus("Connected - ${deviceList.size} devices found", true)
                     updateUI(true)
                 }
             }
@@ -175,19 +201,26 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        // Get selected target device
+        val selectedDevice = targetDeviceSpinner.selectedItem as? Device
+        if (selectedDevice == null) {
+            updateStatus("No target device selected", false)
+            return
+        }
+
         // Cancel pending auto-send
         autoSendRunnable?.let { mainHandler.removeCallbacks(it) }
 
-        // Send text
+        // Send text to selected device
         CoroutineScope(Dispatchers.IO).launch {
-            webSocketClient?.sendText(text)
+            webSocketClient?.sendTextToDevice(text, selectedDevice.deviceId)
         }
 
         // Clear input
         textInput.setText("")
 
         // Show feedback
-        updateStatus("Sent: ${text.take(30)}${if (text.length > 30) "..." else ""}", true)
+        updateStatus("Sent to ${selectedDevice.deviceName}: ${text.take(20)}${if (text.length > 20) "..." else ""}", true)
     }
 
     private fun updateStatus(message: String, isConnected: Boolean) {
@@ -204,8 +237,21 @@ class MainActivity : AppCompatActivity() {
     private fun updateUI(isConnected: Boolean) {
         serverUrlInput.isEnabled = !isConnected
         connectButton.text = if (isConnected) "Disconnect" else "Connect"
-        textInput.isEnabled = isConnected
-        sendButton.isEnabled = isConnected
+        targetDeviceSpinner.isEnabled = isConnected && deviceList.isNotEmpty()
+        textInput.isEnabled = isConnected && deviceList.isNotEmpty()
+        sendButton.isEnabled = isConnected && deviceList.isNotEmpty()
+    }
+
+    private fun fetchDeviceList() {
+        // For now, add mock devices - will be replaced with actual API call
+        deviceList.clear()
+        deviceList.add(Device("linux-1", "Work Laptop", "linux", "online"))
+        deviceList.add(Device("linux-2", "Home Desktop", "linux", "offline"))
+        deviceAdapter.notifyDataSetChanged()
+
+        runOnUiThread {
+            updateUI(true)
+        }
     }
 
     override fun onDestroy() {
