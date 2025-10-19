@@ -213,8 +213,6 @@ impl UtterClient {
                 state.client_id = Some(client_id.clone());
                 drop(state);
 
-                println!("{}✓ Connected to relay{}", colors::GREEN, colors::RESET);
-
                 let hostname = get_hostname();
 
                 // Get public key if crypto is enabled
@@ -236,7 +234,9 @@ impl UtterClient {
                 })
             }
             WsMessage::Registered => {
-                println!("{}✓ Ready{}", colors::GREEN, colors::RESET);
+                print!("{}●{} Connected\n\n", colors::GREEN, colors::RESET);
+                use std::io::Write;
+                std::io::stdout().flush().unwrap();
                 None
             }
             WsMessage::Text { content, from, timestamp, encrypted, nonce, ephemeral_public_key } => {
@@ -294,15 +294,16 @@ impl UtterClient {
                 let sender = from.unwrap_or_else(|| "unknown".to_string());
 
                 // Format display text
-                let display_text = if plaintext.len() > 40 {
-                    format!("{}...", &plaintext[..40])
+                let display_text = if plaintext.len() > 60 {
+                    format!("{}...", &plaintext[..60])
                 } else {
                     plaintext.clone()
                 };
 
-                // Print message status in place (single line)
+                // Print message status (two lines)
+                // Move up two lines and clear both before printing
                 use std::io::Write;
-                print!("\r\x1b[K{}Last:{} {} {}from {}{}: {}",
+                print!("\x1b[2A\r\x1b[K{}Last:{} {} {}from {}{}\n\x1b[K{}\n",
                     colors::DIM, colors::RESET,
                     time_ago,
                     colors::DIM, colors::RESET, sender,
