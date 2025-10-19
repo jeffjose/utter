@@ -68,6 +68,10 @@ const colors = {
   gray: '\x1b[90m',
 };
 
+function stripWsPrefix(url: string): string {
+  return url.replace(/^wss?:\/\//, '');
+}
+
 class TestClient {
   private ws: WebSocket | null = null;
   private connected: boolean = false;
@@ -471,16 +475,34 @@ Security:
 // Main
 async function main() {
   const args = process.argv.slice(2);
-  const serverUrl = args[0] || 'ws://localhost:8080';
+
+  // Parse arguments
+  let serverUrl = process.env.UTTER_RELAY_SERVER || 'ws://localhost:8080';
+  let deviceId: string | undefined;
+  let deviceName: string | undefined;
+
+  // Parse CLI flags (priority: CLI > env > default)
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--server' && args[i + 1]) {
+      serverUrl = args[i + 1];
+      i++; // skip next arg
+    } else if (args[i] === '--device-id' && args[i + 1]) {
+      deviceId = args[i + 1];
+      i++;
+    } else if (args[i] === '--device-name' && args[i + 1]) {
+      deviceName = args[i + 1];
+      i++;
+    }
+  }
 
   // Client format: hostname-client-shortid
   const hostname = os.hostname();
   const shortId = Math.random().toString(36).substring(2, 8);
-  const deviceId = args[1] || `${hostname}-client-${shortId}`;
-  const deviceName = args[2] || deviceId;
+  deviceId = deviceId || `${hostname}-client-${shortId}`;
+  deviceName = deviceName || deviceId;
 
   console.log(`${colors.bright}${colors.cyan}Utter${colors.reset} ${colors.dim}Test Client${colors.reset}`);
-  console.log(`${colors.gray}${serverUrl} • ${deviceName}${colors.reset}\n`);
+  console.log(`${colors.gray}${stripWsPrefix(serverUrl)} • ${deviceName}${colors.reset}\n`);
 
   const client = new TestClient(serverUrl, deviceId, deviceName);
 
