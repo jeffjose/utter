@@ -5,12 +5,15 @@ use clap::Parser;
 use crypto::{KeyManager, MessageEncryption, EncryptedMessage};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
+use std::fs::{File, OpenOptions};
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
+use fs2::FileExt;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -66,6 +69,37 @@ fn normalize_server_url(url: &str) -> String {
     }
 }
 
+/// Acquire an exclusive lock to ensure only one instance of utterd runs
+fn acquire_singleton_lock(lock_file_path: Option<String>) -> Result<File, String> {
+    let lock_path: PathBuf = if let Some(path) = lock_file_path {
+        PathBuf::from(path)
+    } else {
+        // Default: ~/.utterd/lock
+        dirs::home_dir()
+            .ok_or("Cannot determine home directory")?
+            .join(".utterd")
+            .join("lock")
+    };
+
+    // Create parent directory if it doesn't exist
+    if let Some(parent) = lock_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Cannot create lock directory: {}", e))?;
+    }
+
+    let lock_file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .open(&lock_path)
+        .map_err(|e| format!("Cannot create lock file at {}: {}", lock_path.display(), e))?;
+
+    lock_file
+        .try_lock_exclusive()
+        .map_err(|_| format!("Another utterd instance is already running (lock file: {})", lock_path.display()))?;
+
+    Ok(lock_file)
+}
+
 /// utterd - Voice dictation from Android to Linux
 #[derive(Parser)]
 #[command(name = "utterd")]
@@ -78,6 +112,10 @@ struct Args {
     /// Tool for simulating keyboard input (default: xdotool)
     #[arg(long, default_value = "xdotool", hide_default_value = true)]
     tool: String,
+
+    /// Lock file path to prevent multiple instances (default: ~/.utterd/lock)
+    #[arg(long)]
+    lock_file: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -526,6 +564,13 @@ impl Clone for UtterClient {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+
+    // Acquire singleton lock to prevent multiple instances
+    let _lock_file = acquire_singleton_lock(args.lock_file).map_err(|e| {
+        eprintln!("{}✗ {}{}", colors::RED, e, colors::RESET);
+        std::process::exit(1);
+    }).unwrap();
+    // Lock is held for the lifetime of _lock_file, which is the entire program
 
     // Validate tool argument
     if args.tool != "xdotool" && args.tool != "ydotool" {
