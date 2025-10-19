@@ -7,6 +7,7 @@ import * as path from 'path';
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 8080;
+const MAX_MESSAGE_LENGTH = process.env.MAX_MESSAGE_LENGTH ? parseInt(process.env.MAX_MESSAGE_LENGTH) : 5000;
 
 // ANSI color codes
 const colors = {
@@ -248,6 +249,17 @@ function handleMessage(sender: Client, message: any) {
   const targetDeviceId = message.to;
   const content = message.content;
 
+  // Validate message length
+  if (content && content.length > MAX_MESSAGE_LENGTH) {
+    sender.ws.send(JSON.stringify({
+      type: 'error',
+      message: `Message too long (${content.length}/${MAX_MESSAGE_LENGTH} characters)`,
+      timestamp: Date.now()
+    }));
+    console.log(`${colors.dim}[${sender.id}]${colors.reset} ${colors.red}✗${colors.reset} Message too long: ${content.length}/${MAX_MESSAGE_LENGTH} chars`);
+    return;
+  }
+
   if (!targetDeviceId) {
     sender.ws.send(JSON.stringify({
       type: 'error',
@@ -321,6 +333,17 @@ function handleMessage(sender: Client, message: any) {
 }
 
 function handleText(sender: Client, message: any) {
+  // Validate message length
+  if (message.content && message.content.length > MAX_MESSAGE_LENGTH) {
+    sender.ws.send(JSON.stringify({
+      type: 'error',
+      message: `Message too long (${message.content.length}/${MAX_MESSAGE_LENGTH} characters)`,
+      timestamp: Date.now()
+    }));
+    console.log(`${colors.dim}[${sender.id}]${colors.reset} ${colors.red}✗${colors.reset} Message too long: ${message.content.length}/${MAX_MESSAGE_LENGTH} chars`);
+    return;
+  }
+
   console.log(`${colors.dim}[${sender.id}]${colors.reset} ${colors.magenta}Broadcasting${colors.reset} ${colors.dim}"${message.content}"${colors.reset}`);
 
   // Phase 1: Simple broadcast to all OTHER clients

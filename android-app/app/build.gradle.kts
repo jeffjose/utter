@@ -37,6 +37,7 @@ android {
         buildConfigField("String", "GOOGLE_CLIENT_ID", "\"${envProperties.getProperty("GOOGLE_CLIENT_ID")}\"")
         buildConfigField("String", "SERVER_URL", "\"${envProperties.getProperty("SERVER_URL", "ws://localhost:8080")}\"")
         buildConfigField("String", "VERSION_NAME", "\"${versionName}\"")
+        buildConfigField("int", "MAX_MESSAGE_LENGTH", envProperties.getProperty("MAX_MESSAGE_LENGTH", "5000"))
     }
 
     buildTypes {

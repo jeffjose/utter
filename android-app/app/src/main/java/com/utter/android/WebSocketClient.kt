@@ -210,6 +210,14 @@ class WebSocketClient(
             return false
         }
 
+        // Validate message length
+        if (text.length > BuildConfig.MAX_MESSAGE_LENGTH) {
+            val errorMsg = "Message too long (${text.length}/${BuildConfig.MAX_MESSAGE_LENGTH} characters)"
+            Log.e(TAG, errorMsg)
+            listener?.onError(errorMsg)
+            return false
+        }
+
         return try {
             val message = JSONObject().apply {
                 put("type", "text")
@@ -225,6 +233,14 @@ class WebSocketClient(
 
     fun sendTextToDevice(text: String, targetDeviceId: String): Boolean {
         if (!isConnected || webSocket == null) {
+            return false
+        }
+
+        // Validate message length
+        if (text.length > BuildConfig.MAX_MESSAGE_LENGTH) {
+            val errorMsg = "Message too long (${text.length}/${BuildConfig.MAX_MESSAGE_LENGTH} characters)"
+            Log.e(TAG, errorMsg)
+            listener?.onError(errorMsg)
             return false
         }
 
@@ -259,6 +275,14 @@ class WebSocketClient(
     ): Boolean {
         if (!isConnected || webSocket == null) {
             Log.e(TAG, "Cannot send: not connected")
+            return false
+        }
+
+        // Validate message length
+        if (text.length > BuildConfig.MAX_MESSAGE_LENGTH) {
+            val errorMsg = "Message too long (${text.length}/${BuildConfig.MAX_MESSAGE_LENGTH} characters)"
+            Log.e(TAG, errorMsg)
+            listener?.onError(errorMsg)
             return false
         }
 
