@@ -11,6 +11,21 @@ const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const REDIRECT_URI: &str = "http://localhost:3000/oauth/callback";
 const SCOPES: &str = "openid email profile";
 
+// OAuth credentials for Utter desktop application
+// NOTE: It is safe and normal to embed these in native/desktop applications.
+// Google's OAuth security model for native apps does not rely on keeping CLIENT_SECRET
+// confidential. The real security comes from redirect URI validation, user consent,
+// and ID token verification on the relay server.
+// See: https://developers.google.com/identity/protocols/oauth2/native-app
+//
+// These values are read from GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment
+// variables at build time and baked into the binary. To build:
+//   1. Copy ../.env.example to ../.env
+//   2. Fill in your Google OAuth credentials
+//   3. Run: cargo build (build.rs will load ../.env automatically)
+const CLIENT_ID: &str = env!("GOOGLE_CLIENT_ID");
+const CLIENT_SECRET: &str = env!("GOOGLE_CLIENT_SECRET");
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct OAuthTokens {
     pub id_token: String,
@@ -35,13 +50,11 @@ struct RefreshTokenResponse {
 }
 
 pub struct OAuthManager {
-    client_id: String,
-    client_secret: String,
     token_path: PathBuf,
 }
 
 impl OAuthManager {
-    pub fn new(client_id: String, client_secret: String) -> Result<Self, String> {
+    pub fn new() -> Result<Self, String> {
         let config_dir = dirs::config_dir()
             .ok_or("Cannot determine config directory")?
             .join("utterd");
@@ -54,8 +67,6 @@ impl OAuthManager {
         let token_path = config_dir.join("oauth.json");
 
         Ok(Self {
-            client_id,
-            client_secret,
             token_path,
         })
     }
@@ -110,7 +121,7 @@ impl OAuthManager {
         let auth_url = format!(
             "{}?client_id={}&redirect_uri={}&response_type=code&scope={}&access_type=offline&prompt=consent",
             AUTH_URL,
-            urlencoding::encode(&self.client_id),
+            urlencoding::encode(CLIENT_ID),
             urlencoding::encode(REDIRECT_URI),
             urlencoding::encode(SCOPES)
         );
@@ -144,7 +155,20 @@ impl OAuthManager {
 
                         let code = params.iter().find(|(k, _)| *k == "code").map(|(_, v)| *v);
 
-                        if let Some(code) = code {
+                        if let Some(code_encoded) = code {
+                            // URL-decode the authorization code
+                            let code = match urlencoding::decode(code_encoded) {
+                                Ok(decoded) => decoded.to_string(),
+                                Err(_) => {
+                                    let html = "<h1>Error: Failed to decode authorization code</h1>";
+                                    let response = Response::from_string(html)
+                                        .with_header(tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/html"[..]).unwrap());
+                                    let _ = request.respond(response);
+                                    let _ = tx.send(Err("Failed to decode authorization code".to_string()));
+                                    break;
+                                }
+                            };
+
                             // Send success response to browser
                             let html = r#"
                                 <html>
@@ -159,7 +183,7 @@ impl OAuthManager {
                             let _ = request.respond(response);
 
                             // Send code to main thread
-                            let _ = tx.send(Ok(code.to_string()));
+                            let _ = tx.send(Ok(code));
                         } else {
                             let html = "<h1>Error: No authorization code received</h1>";
                             let response = Response::from_string(html)
@@ -182,8 +206,8 @@ impl OAuthManager {
         // Exchange code for tokens
         let client = reqwest::blocking::Client::new();
         let params = [
-            ("client_id", self.client_id.as_str()),
-            ("client_secret", self.client_secret.as_str()),
+            ("client_id", CLIENT_ID),
+            ("client_secret", CLIENT_SECRET),
             ("code", code.as_str()),
             ("grant_type", "authorization_code"),
             ("redirect_uri", REDIRECT_URI),
@@ -211,8 +235,8 @@ impl OAuthManager {
         let client = reqwest::blocking::Client::new();
 
         let params = [
-            ("client_id", self.client_id.as_str()),
-            ("client_secret", self.client_secret.as_str()),
+            ("client_id", CLIENT_ID),
+            ("client_secret", CLIENT_SECRET),
             ("refresh_token", refresh_token),
             ("grant_type", "refresh_token"),
         ];

@@ -1,9 +1,11 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import * as dotenv from 'dotenv';
 import * as os from 'os';
-import { verifyGoogleToken, isTestModeAllowed } from './auth';
+import * as path from 'path';
+import { verifyGoogleToken } from './auth';
 
-dotenv.config();
+// Load environment from root .env file
+dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 8080;
 
@@ -187,32 +189,26 @@ async function handleRegister(client: Client, message: any) {
   client.platform = message.platform;
   client.arch = message.arch;
 
-  // OAuth authentication
-  if (message.token) {
-    // Production mode: Verify OAuth token
-    try {
-      const userInfo = await verifyGoogleToken(message.token);
-      client.userId = userInfo.email;
-
-      console.log(`${colors.dim}[${client.id}]${colors.reset} ${colors.green}✓${colors.reset} OAuth verified: ${userInfo.email}`);
-    } catch (err: any) {
-      console.error(`${colors.dim}[${client.id}]${colors.reset} ${colors.red}✗${colors.reset} OAuth failed:`, err.message);
-      client.ws.send(JSON.stringify({
-        type: 'error',
-        message: 'OAuth verification failed. Please sign in again.',
-        timestamp: Date.now()
-      }));
-      return;
-    }
-  } else if (isTestModeAllowed()) {
-    // Development/test mode: Allow hardcoded userId
-    client.userId = 'test-user';
-    console.log(`${colors.dim}[${client.id}]${colors.reset} ${colors.yellow}⚠${colors.reset} Test mode: using 'test-user'`);
-  } else {
-    // No token provided and test mode disabled
+  // OAuth authentication (required)
+  if (!message.token) {
     client.ws.send(JSON.stringify({
       type: 'error',
       message: 'OAuth token required. Please sign in with Google.',
+      timestamp: Date.now()
+    }));
+    return;
+  }
+
+  try {
+    const userInfo = await verifyGoogleToken(message.token);
+    client.userId = userInfo.email;
+
+    console.log(`${colors.dim}[${client.id}]${colors.reset} ${colors.green}✓${colors.reset} OAuth verified: ${userInfo.email}`);
+  } catch (err: any) {
+    console.error(`${colors.dim}[${client.id}]${colors.reset} ${colors.red}✗${colors.reset} OAuth failed:`, err.message);
+    client.ws.send(JSON.stringify({
+      type: 'error',
+      message: 'OAuth verification failed. Please sign in again.',
       timestamp: Date.now()
     }));
     return;

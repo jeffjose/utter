@@ -14,8 +14,6 @@ class SignInActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "SignInActivity"
-        // TODO: Replace with your Google OAuth Client ID
-        private const val GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"
     }
 
     private lateinit var authManager: GoogleAuthManager
@@ -33,7 +31,7 @@ class SignInActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
 
         // Initialize auth manager
-        authManager = GoogleAuthManager(this, GOOGLE_CLIENT_ID)
+        authManager = GoogleAuthManager(this, BuildConfig.GOOGLE_CLIENT_ID)
 
         // Check if already signed in
         if (authManager.isSignedIn()) {

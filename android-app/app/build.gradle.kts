@@ -1,6 +1,21 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+// Load .env file from project root (two levels up from app/)
+val envFile = file("../../.env")
+val envProperties = Properties()
+if (envFile.exists()) {
+    envProperties.load(FileInputStream(envFile))
+} else {
+    throw GradleException(
+        "No .env file found at ${envFile.absolutePath}. " +
+        "Please copy .env.example to .env and fill in your credentials."
+    )
 }
 
 android {
@@ -15,6 +30,10 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Inject environment variables into BuildConfig
+        buildConfigField("String", "GOOGLE_CLIENT_ID", "\"${envProperties.getProperty("GOOGLE_ANDROID_CLIENT_ID")}\"")
+        buildConfigField("String", "SERVER_URL", "\"${envProperties.getProperty("SERVER_URL", "ws://localhost:8080")}\"")
     }
 
     buildTypes {
@@ -25,6 +44,10 @@ android {
                 "proguard-rules.pro"
             )
         }
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     compileOptions {

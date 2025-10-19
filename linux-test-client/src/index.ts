@@ -10,10 +10,11 @@ import { config } from 'dotenv';
 import { KeyManager, MessageEncryption } from './crypto/index.js';
 import { OAuthManager } from './oauth/auth.js';
 
-config(); // Load .env file
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Load environment from root .env file
+config({ path: path.join(__dirname, '../../.env') });
 
 // Read version from package.json
 const packageJson = JSON.parse(

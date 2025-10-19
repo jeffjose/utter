@@ -43,9 +43,3 @@ export async function verifyGoogleToken(token: string): Promise<VerifiedUser> {
   }
 }
 
-/**
- * Check if test mode is allowed (for development)
- */
-export function isTestModeAllowed(): boolean {
-  return process.env.ALLOW_TEST_MODE === 'true';
-}

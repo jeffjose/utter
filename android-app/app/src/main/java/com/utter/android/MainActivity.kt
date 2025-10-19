@@ -17,8 +17,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
-        // TODO: Replace with your Google OAuth Client ID
-        private const val GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"
     }
 
     private lateinit var serverUrlInput: EditText
@@ -55,7 +53,7 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
 
         // Initialize OAuth manager
-        authManager = GoogleAuthManager(this, GOOGLE_CLIENT_ID)
+        authManager = GoogleAuthManager(this, BuildConfig.GOOGLE_CLIENT_ID)
 
         // Set default server URL
         serverUrlInput.setText(getDefaultServerUrl())

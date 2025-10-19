@@ -113,12 +113,18 @@ enum WsMessage {
 #[derive(Clone)]
 struct AppState {
     client_id: Option<String>,
+    last_message_timestamp: Option<i64>,
+    last_message_sender: Option<String>,
+    last_message_text: Option<String>,
 }
 
 impl AppState {
     fn new() -> Self {
         Self {
             client_id: None,
+            last_message_timestamp: None,
+            last_message_sender: None,
+            last_message_text: None,
         }
     }
 }
@@ -300,6 +306,13 @@ impl UtterClient {
                     plaintext.clone()
                 };
 
+                // Update state with message info
+                let mut state = self.state.lock().await;
+                state.last_message_timestamp = timestamp;
+                state.last_message_sender = Some(sender.clone());
+                state.last_message_text = Some(display_text.clone());
+                drop(state);
+
                 // Print message status (two lines)
                 // Move up two lines and clear both before printing
                 use std::io::Write;
@@ -318,6 +331,45 @@ impl UtterClient {
             }
             WsMessage::Pong => None,
             _ => None,
+        }
+    }
+
+    async fn update_message_display(&self) {
+        let state = self.state.lock().await;
+
+        if let (Some(timestamp), Some(sender), Some(text)) = (
+            state.last_message_timestamp,
+            state.last_message_sender.clone(),
+            state.last_message_text.clone(),
+        ) {
+            drop(state);
+
+            // Calculate time ago
+            use std::time::{SystemTime, UNIX_EPOCH, Duration};
+            let msg_time = UNIX_EPOCH + Duration::from_millis(timestamp as u64);
+            let now = SystemTime::now();
+
+            let time_ago = if let Ok(elapsed) = now.duration_since(msg_time) {
+                let secs = elapsed.as_secs();
+                if secs < 60 {
+                    format!("{}s ago", secs)
+                } else if secs < 3600 {
+                    format!("{}m ago", secs / 60)
+                } else {
+                    format!("{}h ago", secs / 3600)
+                }
+            } else {
+                "just now".to_string()
+            };
+
+            // Print message status (two lines)
+            use std::io::Write;
+            print!("\x1b[2A\r\x1b[K{}Last:{} {} {}from {}{}\n\x1b[K{}\n",
+                colors::DIM, colors::RESET,
+                time_ago,
+                colors::DIM, colors::RESET, sender,
+                text);
+            std::io::stdout().flush().unwrap();
         }
     }
 
@@ -343,6 +395,15 @@ impl UtterClient {
             })?;
 
         let (mut write, mut read) = ws_stream.split();
+
+        // Spawn background task to update message display every second
+        let client_clone = self.clone();
+        let update_task = tokio::spawn(async move {
+            loop {
+                sleep(Duration::from_secs(1)).await;
+                client_clone.update_message_display().await;
+            }
+        });
 
         // Message loop
         loop {
@@ -383,6 +444,9 @@ impl UtterClient {
             }
         }
 
+        // Clean up: abort the update task
+        update_task.abort();
+
         Ok(())
     }
 
@@ -396,33 +460,21 @@ impl UtterClient {
             return Ok(());
         }
 
-        // Initialize OAuth if CLIENT_ID and CLIENT_SECRET are set
-        if let (Ok(client_id), Ok(client_secret)) = (
-            std::env::var("GOOGLE_CLIENT_ID"),
-            std::env::var("GOOGLE_CLIENT_SECRET")
-        ) {
-            match oauth::OAuthManager::new(client_id, client_secret) {
-                Ok(oauth_manager) => {
-                    match oauth_manager.get_or_authenticate() {
-                        Ok(tokens) => {
-                            self.id_token = Some(tokens.id_token);
-                            println!();
-                        }
-                        Err(e) => {
-                            eprintln!("{}⚠ OAuth failed: {}{}", colors::YELLOW, e, colors::RESET);
-                            eprintln!("{}Continuing in test mode...{}\n", colors::DIM, colors::RESET);
-                        }
-                    }
-                }
-                Err(e) => {
-                    eprintln!("{}⚠ OAuth init failed: {}{}", colors::YELLOW, e, colors::RESET);
-                    eprintln!("{}Continuing in test mode...{}\n", colors::DIM, colors::RESET);
-                }
-            }
-        } else {
-            println!("{}⚠ No OAuth credentials found. Running in test mode.{}", colors::YELLOW, colors::RESET);
-            println!("{}Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to enable OAuth.{}\n", colors::GRAY, colors::RESET);
-        }
+        // Initialize OAuth (runs blocking I/O, so use spawn_blocking)
+        let tokens = tokio::task::spawn_blocking(|| {
+            let oauth_manager = oauth::OAuthManager::new()?;
+            oauth_manager.get_or_authenticate()
+        })
+        .await
+        .map_err(|e| format!("OAuth task failed: {}", e))?
+        .map_err(|e| {
+            eprintln!("{}✗ OAuth failed: {}{}", colors::RED, e, colors::RESET);
+            eprintln!("{}Cannot start without authentication.{}\n", colors::RED, colors::RESET);
+            e
+        })?;
+
+        self.id_token = Some(tokens.id_token);
+        println!();
 
         // Print startup banner
         println!();

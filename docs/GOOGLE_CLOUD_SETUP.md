@@ -6,11 +6,13 @@ This guide explains how to set up Google OAuth for all Utter components.
 
 Utter uses Google OAuth for authentication across all components:
 - **Relay Server**: Verifies ID tokens
-- **utterd** (Linux daemon): Device authorization flow
+- **utterd** (Linux daemon): Browser-based OAuth flow
 - **linux-test-client**: Browser-based OAuth flow
 - **Android app**: Google Play Services Sign-In
 
 All devices under the same Google account can communicate with each other (Tailscale-style trusted pool).
+
+**Configuration**: All packages use a single centralized `.env` file at the project root.
 
 ## Prerequisites
 
@@ -72,35 +74,20 @@ For the relay server (verification only), utterd, and linux-test-client (browser
 6. Click **"Create"**
 7. Copy **Client ID** and **Client Secret**
 
-**Configure relay server:**
+**Configure all packages:**
 ```bash
-cd relay-server
+# At project root
 cp .env.example .env
-# Edit .env and add:
-GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-```
 
-**Configure linux-test-client:**
-```bash
-cd linux-test-client
-cp .env.example .env
 # Edit .env and add:
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-client-secret
 ```
 
-**Configure utterd:**
-```bash
-cd utterd
-# Run utterd with environment variables:
-GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com \
-GOOGLE_CLIENT_SECRET=your-client-secret \
-cargo run
-
-# Or export in your shell profile:
-export GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-export GOOGLE_CLIENT_SECRET=your-client-secret
-```
+This single `.env` file is used by all packages:
+- **relay-server**: Loads at runtime for token verification
+- **utterd**: Loaded at build time, credentials baked into binary
+- **linux-test-client**: Loads at runtime for OAuth flow
 
 ### 3.2. Android App
 
@@ -126,39 +113,19 @@ For Android app (Google Play Services):
 
 3. Copy the **Client ID**
 
-4. Update the Android app:
-   ```kotlin
-   // In SignInActivity.kt and MainActivity.kt
-   // Replace:
-   private const val GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"
-   // With your actual Client ID
+4. Update the root `.env` file:
+   ```bash
+   # Edit .env and add:
+   GOOGLE_ANDROID_CLIENT_ID=your-android-client-id.apps.googleusercontent.com
    ```
+
+The Android app automatically reads this from the root `.env` file at build time and injects it into `BuildConfig.GOOGLE_CLIENT_ID`.
 
 ---
 
 ## Step 4: Testing
 
-### Test Mode (Development)
-
-For development without OAuth:
-```bash
-# Relay server - allow test mode
-cd relay-server
-# In .env:
-ALLOW_TEST_MODE=true
-
-# All clients will use userId = 'test-user'
-```
-
-### Production Mode (OAuth Required)
-
-```bash
-# Relay server - enforce OAuth
-cd relay-server
-# In .env:
-ALLOW_TEST_MODE=false
-GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-```
+**Prerequisites**: Ensure you've configured the root `.env` file with all credentials from Step 3.
 
 ### Test Each Component
 
@@ -171,8 +138,7 @@ pnpm start
 **2. Test utterd:**
 ```bash
 cd utterd
-GOOGLE_CLIENT_ID=your-web-client-id.apps.googleusercontent.com \
-GOOGLE_CLIENT_SECRET=your-client-secret \
+cargo build   # Builds with credentials from root .env
 cargo run
 
 # You should see:
@@ -195,8 +161,8 @@ pnpm start
 **4. Test Android app:**
 ```bash
 cd android-app
-./build.sh
-./install.sh
+./gradlew assembleDebug   # Builds with credentials from root .env
+./gradlew installDebug
 
 # Open app, tap "Sign in with Google"
 ```
@@ -251,24 +217,27 @@ When ready for production:
    - Click **"Publish App"**
    - Google may require verification if requesting sensitive scopes
 
-2. **Use Environment Variables**:
-   ```bash
-   # Relay server
-   export GOOGLE_CLIENT_ID=...
-   export ALLOW_TEST_MODE=false
-
-   # utterd
-   export GOOGLE_CLIENT_ID=...
-
-   # linux-test-client
-   export GOOGLE_CLIENT_ID=...
-   export GOOGLE_CLIENT_SECRET=...
-   ```
-
-3. **Secure Credentials**:
-   - Never commit `.env` files
+2. **Secure Credentials**:
+   - Never commit `.env` files (already in `.gitignore`)
    - Use secret management (e.g., AWS Secrets Manager, HashiCorp Vault)
    - Rotate credentials periodically
+
+3. **Build Process**:
+   - **utterd**: Build with production `.env` on build server
+     ```bash
+     cargo build --release
+     # Binary contains baked-in credentials
+     ```
+   - **Android**: Build with production `.env` on build server
+     ```bash
+     ./gradlew assembleRelease
+     # APK contains baked-in credentials
+     ```
+   - **Node.js apps**: Deploy with `.env` file
+     ```bash
+     # Ensure .env is deployed to production server
+     # Apps load it at runtime
+     ```
 
 ---
 
