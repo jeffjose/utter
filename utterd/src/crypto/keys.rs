@@ -35,10 +35,8 @@ impl KeyManager {
         let key_path = self.config_dir.join("keypair.key");
 
         if key_path.exists() {
-            println!("[Crypto] Loading existing keypair from {:?}", key_path);
             self.load_keypair(&key_path)?;
         } else {
-            println!("[Crypto] Generating new X25519 keypair");
             self.generate_and_save_keypair(&key_path)?;
         }
 
@@ -61,8 +59,6 @@ impl KeyManager {
             perms.set_mode(0o600); // rw------- (owner only)
             fs::set_permissions(path, perms)?;
         }
-
-        println!("[Crypto] Keypair generated and saved to {:?}", path);
 
         self.private_key = Some(private_key);
         self.public_key = Some(public_key);
@@ -122,7 +118,6 @@ impl KeyManager {
         let key_path = self.config_dir.join("keypair.key");
         if key_path.exists() {
             fs::remove_file(key_path)?;
-            println!("[Crypto] Keys cleared");
         }
         Ok(())
     }
