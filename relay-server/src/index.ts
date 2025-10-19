@@ -10,10 +10,25 @@ interface Client {
   ws: WebSocket;
   id: string;
   type: 'android' | 'linux' | 'unknown';
-  pairedWith?: string;
+  deviceId?: string;
+  deviceName?: string;
+  userId?: string;
+  publicKey?: string;
+  status: 'online' | 'offline';
+  connectedAt: Date;
 }
 
 const clients = new Map<string, Client>();
+
+interface Device {
+  deviceId: string;
+  deviceName: string;
+  deviceType: 'android' | 'linux';
+  userId: string;
+  publicKey?: string;
+  status: 'online' | 'offline';
+  lastConnected: Date;
+}
 
 // Listen on all network interfaces (don't specify host parameter)
 const wss = new WebSocketServer({ port: PORT });
@@ -59,7 +74,10 @@ console.log('');
 console.log('Android Emulator: Use ws://10.0.2.2:' + PORT);
 console.log('Physical Device: Use one of the network addresses above');
 console.log('='.repeat(60));
-console.log('Phase 1: Direct echo mode - all messages broadcast to all clients');
+console.log('Features:');
+console.log('  - Device registry and management');
+console.log('  - Targeted message routing');
+console.log('  - User-based device isolation (OAuth ready)');
 console.log('');
 
 wss.on('connection', (ws: WebSocket) => {
@@ -70,7 +88,9 @@ wss.on('connection', (ws: WebSocket) => {
   const client: Client = {
     ws,
     id: clientId,
-    type: 'unknown'
+    type: 'unknown',
+    status: 'online',
+    connectedAt: new Date()
   };
 
   clients.set(clientId, client);
@@ -84,6 +104,14 @@ wss.on('connection', (ws: WebSocket) => {
       switch (message.type) {
         case 'register':
           handleRegister(client, message);
+          break;
+
+        case 'get_devices':
+          handleGetDevices(client);
+          break;
+
+        case 'message':
+          handleMessage(client, message);
           break;
 
         case 'text':
@@ -122,12 +150,108 @@ wss.on('connection', (ws: WebSocket) => {
 
 function handleRegister(client: Client, message: any) {
   client.type = message.clientType || 'unknown';
-  console.log(`[${client.id}] Registered as ${client.type}`);
+  client.deviceId = message.deviceId || client.id;
+  client.deviceName = message.deviceName || `${client.type}-${client.id}`;
+  client.userId = message.userId || 'test-user'; // TODO: Get from OAuth token
+  client.publicKey = message.publicKey;
+
+  console.log(`[${client.id}] Registered as ${client.type} (device: ${client.deviceId}, name: ${client.deviceName})`);
 
   client.ws.send(JSON.stringify({
     type: 'registered',
     clientId: client.id,
+    deviceId: client.deviceId,
     clientType: client.type,
+    timestamp: Date.now()
+  }));
+}
+
+function handleGetDevices(client: Client) {
+  console.log(`[${client.id}] Fetching device list for user: ${client.userId}`);
+
+  const devices: Device[] = [];
+
+  // Get all devices for this user
+  clients.forEach((c) => {
+    if (c.userId === client.userId && c.deviceId) {
+      devices.push({
+        deviceId: c.deviceId,
+        deviceName: c.deviceName || c.deviceId,
+        deviceType: c.type as 'android' | 'linux',
+        userId: c.userId || 'test-user',
+        publicKey: c.publicKey,
+        status: c.status,
+        lastConnected: c.connectedAt
+      });
+    }
+  });
+
+  console.log(`[${client.id}] Found ${devices.length} devices`);
+
+  client.ws.send(JSON.stringify({
+    type: 'devices',
+    devices,
+    timestamp: Date.now()
+  }));
+}
+
+function handleMessage(sender: Client, message: any) {
+  const targetDeviceId = message.to;
+  const content = message.content;
+
+  if (!targetDeviceId) {
+    console.log(`[${sender.id}] Error: No target device specified`);
+    sender.ws.send(JSON.stringify({
+      type: 'error',
+      message: 'No target device specified',
+      timestamp: Date.now()
+    }));
+    return;
+  }
+
+  console.log(`[${sender.id}] Sending message to device: ${targetDeviceId}`);
+
+  // Find target client by device ID
+  let targetClient: Client | undefined;
+  clients.forEach((client) => {
+    if (client.deviceId === targetDeviceId && client.userId === sender.userId) {
+      targetClient = client;
+    }
+  });
+
+  if (!targetClient) {
+    console.log(`[${sender.id}] Error: Target device not found or offline: ${targetDeviceId}`);
+    sender.ws.send(JSON.stringify({
+      type: 'error',
+      message: `Target device not found or offline: ${targetDeviceId}`,
+      timestamp: Date.now()
+    }));
+    return;
+  }
+
+  if (targetClient.ws.readyState !== WebSocket.OPEN) {
+    console.log(`[${sender.id}] Error: Target device not connected: ${targetDeviceId}`);
+    sender.ws.send(JSON.stringify({
+      type: 'error',
+      message: `Target device not connected: ${targetDeviceId}`,
+      timestamp: Date.now()
+    }));
+    return;
+  }
+
+  // Forward message to target
+  console.log(`[${sender.id}] → [${targetClient.id}] Forwarding message`);
+  targetClient.ws.send(JSON.stringify({
+    type: 'text',
+    content: content,
+    from: sender.deviceId || sender.id,
+    timestamp: message.timestamp || Date.now()
+  }));
+
+  // Send acknowledgment to sender
+  sender.ws.send(JSON.stringify({
+    type: 'message_sent',
+    to: targetDeviceId,
     timestamp: Date.now()
   }));
 }
