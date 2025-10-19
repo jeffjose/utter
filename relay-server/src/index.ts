@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import * as dotenv from 'dotenv';
 import * as os from 'os';
+import { verifyGoogleToken, isTestModeAllowed } from './auth';
 
 dotenv.config();
 
@@ -158,7 +159,7 @@ wss.on('connection', (ws: WebSocket) => {
   }));
 });
 
-function handleRegister(client: Client, message: any) {
+async function handleRegister(client: Client, message: any) {
   // Validate public key if provided
   if (message.publicKey) {
     try {
@@ -186,10 +187,36 @@ function handleRegister(client: Client, message: any) {
   client.platform = message.platform;
   client.arch = message.arch;
 
-  // TODO Phase 6: Replace with OAuth verification
-  // const userInfo = await verifyGoogleToken(message.token);
-  // client.userId = userInfo.email;
-  client.userId = message.userId || 'test-user';
+  // OAuth authentication
+  if (message.token) {
+    // Production mode: Verify OAuth token
+    try {
+      const userInfo = await verifyGoogleToken(message.token);
+      client.userId = userInfo.email;
+
+      console.log(`${colors.dim}[${client.id}]${colors.reset} ${colors.green}✓${colors.reset} OAuth verified: ${userInfo.email}`);
+    } catch (err: any) {
+      console.error(`${colors.dim}[${client.id}]${colors.reset} ${colors.red}✗${colors.reset} OAuth failed:`, err.message);
+      client.ws.send(JSON.stringify({
+        type: 'error',
+        message: 'OAuth verification failed. Please sign in again.',
+        timestamp: Date.now()
+      }));
+      return;
+    }
+  } else if (isTestModeAllowed()) {
+    // Development/test mode: Allow hardcoded userId
+    client.userId = 'test-user';
+    console.log(`${colors.dim}[${client.id}]${colors.reset} ${colors.yellow}⚠${colors.reset} Test mode: using 'test-user'`);
+  } else {
+    // No token provided and test mode disabled
+    client.ws.send(JSON.stringify({
+      type: 'error',
+      message: 'OAuth token required. Please sign in with Google.',
+      timestamp: Date.now()
+    }));
+    return;
+  }
 
   const typeColor = client.type === 'target' ? colors.blue : client.type === 'android' ? colors.magenta : client.type === 'controller' ? colors.cyan : colors.gray;
 
@@ -200,7 +227,7 @@ function handleRegister(client: Client, message: any) {
   if (client.arch) metadata.push(client.arch);
   const metaStr = metadata.length > 0 ? ` ${colors.dim}• ${metadata.join(' • ')}${colors.reset}` : '';
 
-  console.log(`${colors.dim}[${client.id}]${colors.reset} ${colors.green}●${colors.reset} ${colors.green}UP${colors.reset} ${colors.bright}${client.deviceName}${colors.reset} ${colors.dim}(${typeColor}${client.type}${colors.reset}${colors.dim})${colors.reset}${metaStr}`);
+  console.log(`${colors.dim}[${client.id}]${colors.reset} ${colors.green}●${colors.reset} ${colors.green}UP${colors.reset} ${colors.bright}${client.deviceName}${colors.reset} ${colors.dim}(${typeColor}${client.type}${colors.reset}${colors.dim})${colors.reset} ${colors.dim}user=${client.userId}${colors.reset}${metaStr}`);
 
   client.ws.send(JSON.stringify({
     type: 'registered',
