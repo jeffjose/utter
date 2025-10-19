@@ -106,12 +106,16 @@ enum WsMessage {
 #[derive(Clone)]
 struct AppState {
     client_id: Option<String>,
+    message_count: u32,
+    last_text: String,
 }
 
 impl AppState {
     fn new() -> Self {
         Self {
             client_id: None,
+            message_count: 0,
+            last_text: String::new(),
         }
     }
 }
@@ -204,8 +208,6 @@ impl UtterClient {
                 state.client_id = Some(client_id.clone());
                 drop(state);
 
-                println!("{}✓ Connected to relay{}", colors::GREEN, colors::RESET);
-
                 let hostname = get_hostname();
 
                 // Get public key if crypto is enabled
@@ -226,13 +228,13 @@ impl UtterClient {
                 })
             }
             WsMessage::Registered => {
-                println!("{}✓ Ready{}", colors::GREEN, colors::RESET);
+                println!("{}●{} Connected", colors::GREEN, colors::RESET);
                 None
             }
             WsMessage::Text { content, encrypted, nonce, ephemeral_public_key } => {
                 // ENFORCE ENCRYPTION: Reject plaintext messages
                 if !encrypted.unwrap_or(false) {
-                    println!("{}✗ Rejected plaintext message{}", colors::RED, colors::RESET);
+                    println!("\r\x1b[K{}✗ Rejected plaintext message{}", colors::RED, colors::RESET);
                     return None;
                 }
 
@@ -249,26 +251,38 @@ impl UtterClient {
                     match enc.decrypt(&encrypted_msg, "") {
                         Ok(plaintext) => plaintext,
                         Err(e) => {
-                            println!("{}✗ Decryption failed: {}{}", colors::RED, e, colors::RESET);
+                            println!("\r\x1b[K{}✗ Decryption failed: {}{}", colors::RED, e, colors::RESET);
                             return None;
                         }
                     }
                 } else {
-                    println!("{}✗ Crypto not initialized{}", colors::RED, colors::RESET);
+                    println!("\r\x1b[K{}✗ Crypto not initialized{}", colors::RED, colors::RESET);
                     return None;
                 };
 
-                // Print received message
+                // Update state with message count and last text
+                let mut state = self.state.lock().await;
+                state.message_count += 1;
                 let display_text = if plaintext.len() > 50 {
                     format!("{}...", &plaintext[..50])
                 } else {
                     plaintext.clone()
                 };
-                println!("{}→ {}{}{}", colors::CYAN, colors::DIM, display_text, colors::RESET);
+                state.last_text = display_text.clone();
+                let count = state.message_count;
+                drop(state);
+
+                // Print message status in place
+                use std::io::Write;
+                print!("\r\x1b[K{}Messages:{} {} ({}{}{})",
+                    colors::DIM, colors::RESET,
+                    count,
+                    colors::DIM, display_text, colors::RESET);
+                std::io::stdout().flush().unwrap();
 
                 // Simulate typing
                 if let Err(e) = self.simulate_typing(&plaintext) {
-                    println!("{}✗ Typing error: {}{}", colors::RED, e, colors::RESET);
+                    println!("\n{}✗ Typing error: {}{}", colors::RED, e, colors::RESET);
                 }
                 None
             }
@@ -311,26 +325,26 @@ impl UtterClient {
                                     if let Some(response) = self.handle_message(ws_msg).await {
                                         let json = serde_json::to_string(&response).unwrap();
                                         if let Err(e) = write.send(Message::Text(json)).await {
-                                            println!("{}✗ Send error: {}{}", colors::RED, e, colors::RESET);
+                                            println!("\r\x1b[K{}✗ Send error: {}{}", colors::RED, e, colors::RESET);
                                             break;
                                         }
                                     }
                                 }
                                 Err(_) => {
-                                    println!("{}✗ Invalid JSON received{}", colors::RED, colors::RESET);
+                                    println!("\r\x1b[K{}✗ Invalid JSON received{}", colors::RED, colors::RESET);
                                 }
                             }
                         }
                         Some(Ok(Message::Close(_))) => {
-                            println!("{}✗ Connection closed{}", colors::YELLOW, colors::RESET);
+                            println!("\r\x1b[K{}✗ Connection closed{}", colors::YELLOW, colors::RESET);
                             break;
                         }
                         Some(Err(e)) => {
-                            println!("{}✗ Connection lost: {}{}", colors::RED, e, colors::RESET);
+                            println!("\r\x1b[K{}✗ Connection lost: {}{}", colors::RED, e, colors::RESET);
                             break;
                         }
                         None => {
-                            println!("{}✗ Connection closed{}", colors::YELLOW, colors::RESET);
+                            println!("\r\x1b[K{}✗ Connection closed{}", colors::YELLOW, colors::RESET);
                             break;
                         }
                         _ => {}
@@ -369,7 +383,7 @@ impl UtterClient {
         loop {
             // Try to connect
             if let Err(e) = self.connect().await {
-                println!("{}✗ {}{}", colors::RED, e, colors::RESET);
+                println!("\r\x1b[K{}✗ {}{}", colors::RED, e, colors::RESET);
             }
 
             // Reconnect after 5 seconds
