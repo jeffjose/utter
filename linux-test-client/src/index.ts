@@ -92,7 +92,9 @@ class TestClient {
           break;
 
         case 'message':
-          console.log(`\n← Message from ${msg.from}: ${msg.content}`);
+        case 'text':
+          console.log(`\n← ${msg.from}: ${msg.content}`);
+          this.updatePrompt();
           this.rl.prompt();
           break;
 
@@ -107,15 +109,15 @@ class TestClient {
   private handleDeviceList(devices: Device[]): void {
     this.devices = devices.filter(d => d.deviceType === 'linux');
 
-    console.log('\n Available Linux devices:');
+    console.log('\nAvailable Linux devices:');
     this.devices.forEach((device, idx) => {
       const statusIcon = device.status === 'online' ? '●' : '○';
-      console.log(`  ${idx + 1}. ${device.deviceName} ${statusIcon} (${device.deviceId})`);
+      console.log(`  ${idx + 1}. ${device.deviceName} ${statusIcon}`);
     });
 
     if (this.devices.length > 0) {
-      console.log('\nUse /target <number> to select a device');
-      console.log('Example: /target 1\n');
+      console.log('\nUse /device <number> to select a device');
+      console.log('Example: /device 1\n');
     } else {
       console.log('\n⚠ No Linux devices found');
       console.log('Mock devices will be used for testing\n');
@@ -128,11 +130,12 @@ class TestClient {
 
       console.log('Mock devices:');
       this.devices.forEach((device, idx) => {
-        console.log(`  ${idx + 1}. ${device.deviceName} (${device.deviceId})`);
+        console.log(`  ${idx + 1}. ${device.deviceName}`);
       });
       console.log();
     }
 
+    this.updatePrompt();
     this.rl.prompt();
   }
 
@@ -184,14 +187,15 @@ class TestClient {
         this.fetchDevices();
         break;
 
+      case 'device':
       case 'target':
         if (args.length === 0) {
-          console.log('Usage: /target <number>');
+          console.log('Usage: /device <number>');
         } else {
           const idx = parseInt(args[0]) - 1;
           if (idx >= 0 && idx < this.devices.length) {
             this.targetDevice = this.devices[idx].deviceId;
-            console.log(`✓ Target set to: ${this.devices[idx].deviceName} (${this.targetDevice})`);
+            console.log(`✓ Now sending to: ${this.devices[idx].deviceName}`);
           } else {
             console.log(`✗ Invalid device number. Use /devices to see available devices`);
           }
@@ -223,24 +227,37 @@ class TestClient {
 Commands:
   /help              Show this help message
   /devices           Fetch and display available devices
-  /target <number>   Select target device (e.g., /target 1)
+  /device <number>   Select target device (e.g., /device 1)
   /status            Show connection status
   /quit or /exit     Exit the client
 
 Usage:
   1. Connect to server (automatic on start)
-  2. Use /target <number> to select a Linux device
-  3. Type any message and press Enter to send to the target device
+  2. Use /device <number> to select a Linux device
+  3. Your prompt will change to show the selected device
+  4. Type any message and press Enter to send
 
 Examples:
-  /target 1          Select device #1
-  Hello world        Send "Hello world" to selected device
+  /device 1          Select device #1 (prompt changes to "Work Laptop>")
+  Work Laptop> Hello world    Send "Hello world" to Work Laptop
 `);
+  }
+
+  private updatePrompt(): void {
+    if (this.targetDevice) {
+      const device = this.devices.find(d => d.deviceId === this.targetDevice);
+      const name = device?.deviceName || this.targetDevice;
+      this.rl.setPrompt(`${name}> `);
+    } else {
+      this.rl.setPrompt('> ');
+    }
   }
 
   startREPL(): void {
     console.log('\nUtter Test Client - REPL Mode');
     console.log('Type /help for commands\n');
+
+    this.updatePrompt();
 
     this.rl.on('line', (input: string) => {
       const trimmed = input.trim();
@@ -252,12 +269,14 @@ Examples:
 
       // Handle commands
       if (this.handleCommand(trimmed)) {
+        this.updatePrompt();
         this.rl.prompt();
         return;
       }
 
       // Send as message
       this.sendMessage(trimmed);
+      this.updatePrompt();
       this.rl.prompt();
     });
 

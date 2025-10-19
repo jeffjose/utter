@@ -50,7 +50,7 @@ Once connected, you can use the following commands:
 
 - `/help` - Show help message
 - `/devices` - Fetch and display available Linux devices
-- `/target <number>` - Select target device (e.g., `/target 1`)
+- `/device <number>` - Select target device (e.g., `/device 1`)
 - `/status` - Show connection status
 - `/quit` or `/exit` - Exit the client
 
@@ -72,19 +72,19 @@ Registering as Android device...
 ✓ Registered successfully
 
 Available Linux devices:
-  1. Work Laptop ● (linux-work-laptop)
-  2. Home Desktop ○ (linux-home-desktop)
+  1. Work Laptop ●
+  2. Home Desktop ○
 
-Use /target <number> to select a device
-Example: /target 1
+Use /device <number> to select a device
+Example: /device 1
 
-> /target 1
-✓ Target set to: Work Laptop (linux-work-laptop)
-> Hello world
+> /device 1
+✓ Now sending to: Work Laptop
+Work Laptop> Hello world
 → Sent to linux-work-laptop: Hello world
-> This is a test
+Work Laptop> This is a test
 → Sent to linux-work-laptop: This is a test
-> /quit
+Work Laptop> /quit
 Goodbye!
 ```
 
