@@ -383,21 +383,15 @@ Health check endpoint.
 }
 ```
 
-### Migration Strategy
+### JWT Enforcement
 
-**Phase 1: Dual Mode Support (Backward Compatible)**
-- Support both JWT and legacy (no auth) connections
-- Add `REQUIRE_JWT=false` environment variable
-- Log warnings for unauthenticated connections
+**JWT is REQUIRED** - All connections must authenticate with a valid JWT. There is no legacy/unauthenticated mode.
 
-**Phase 2: JWT Required**
-- Set `REQUIRE_JWT=true`
-- Reject connections without valid JWT
-- All clients must authenticate
-
-**Phase 3: Cleanup**
-- Remove legacy code paths
-- Remove `REQUIRE_JWT` flag
+**Why enforce JWT:**
+- Security first: No reason to allow unauthenticated connections
+- User isolation: Prevent users from seeing other users' devices
+- Simpler codebase: No dual-mode complexity
+- Clear contract: Clients know exactly what's required
 
 ### Server Architecture
 
@@ -416,8 +410,323 @@ httpServer.listen(PORT);
 
 **Endpoint Summary:**
 - `POST /auth` - Obtain JWT from Google OAuth token
+- `POST /auth/refresh` - Refresh JWT before expiration
 - `GET /health` - Health check
 - `ws://host:port/` - WebSocket connection (requires JWT in register message)
+
+## Token Refresh
+
+### Why Token Refresh?
+
+Short-lived JWTs improve security but require refresh mechanism:
+- **Access Token (JWT)**: Short-lived (1 hour), used for WebSocket connections
+- **Refresh Token**: Long-lived (7 days), stored securely, used to obtain new JWT
+
+### Refresh Flow
+
+```
+Client has expired/expiring JWT → POST /auth/refresh with current JWT
+                                 ↓
+                       Server validates JWT payload
+                       (signature may be expired, that's OK)
+                                 ↓
+                       Check JWT exp is < 24 hours old
+                                 ↓
+                       Issue new JWT with fresh exp
+                                 ↓
+                       Return new JWT to client
+```
+
+### POST /auth/refresh Endpoint
+
+**Request:**
+```http
+POST /auth/refresh
+Content-Type: application/json
+
+{
+  "jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expiresIn": 3600,
+  "userId": "user@gmail.com"
+}
+```
+
+**Error Responses:**
+
+**400 Bad Request** - Missing JWT:
+```json
+{
+  "error": "Missing jwt in request body"
+}
+```
+
+**401 Unauthorized** - JWT too old:
+```json
+{
+  "error": "JWT expired more than 24 hours ago. Please re-authenticate."
+}
+```
+
+**401 Unauthorized** - Invalid JWT:
+```json
+{
+  "error": "Invalid JWT: cannot decode payload"
+}
+```
+
+### Client Refresh Strategy
+
+**Proactive Refresh:**
+- Check JWT expiration on startup
+- If exp < 5 minutes, refresh before connecting
+- Avoids mid-connection expiration
+
+**Implementation:**
+```typescript
+async function ensureFreshJWT(jwt: string): Promise<string> {
+  const payload = decodeJWT(jwt); // decode without verification
+  const now = Math.floor(Date.now() / 1000);
+  const timeUntilExpiry = payload.exp - now;
+
+  if (timeUntilExpiry < 300) { // Less than 5 minutes
+    return await refreshJWT(jwt);
+  }
+
+  return jwt;
+}
+```
+
+## Utterd (Rust) Integration
+
+### Overview
+
+The Rust daemon (utterd) must be updated to support JWT authentication:
+
+1. **On startup**: Load or obtain JWT
+2. **Before WebSocket**: Ensure JWT is fresh (refresh if needed)
+3. **On registration**: Include JWT in register message
+4. **On error**: Handle JWT rejection, re-authenticate if needed
+
+### Required Changes
+
+**File: `utterd/src/auth.rs`** (new file)
+
+```rust
+use serde::{Deserialize, Serialize};
+use reqwest;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JWTPayload {
+    pub user_id: String,
+    pub iat: u64,
+    pub exp: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AuthResponse {
+    pub jwt: String,
+    pub expires_in: u64,
+    pub user_id: String,
+}
+
+pub async fn exchange_for_jwt(
+    auth_url: &str,
+    oauth_token: &str
+) -> Result<AuthResponse, Box<dyn std::error::Error>> {
+    let client = reqwest::Client::new();
+    let response = client
+        .post(format!("{}/auth", auth_url))
+        .json(&serde_json::json!({ "token": oauth_token }))
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        let error: serde_json::Value = response.json().await?;
+        return Err(format!("JWT exchange failed: {}", error["error"]).into());
+    }
+
+    let auth_resp: AuthResponse = response.json().await?;
+    Ok(auth_resp)
+}
+
+pub async fn refresh_jwt(
+    auth_url: &str,
+    current_jwt: &str
+) -> Result<AuthResponse, Box<dyn std::error::Error>> {
+    let client = reqwest::Client::new();
+    let response = client
+        .post(format!("{}/auth/refresh", auth_url))
+        .json(&serde_json::json!({ "jwt": current_jwt }))
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        let error: serde_json::Value = response.json().await?;
+        return Err(format!("JWT refresh failed: {}", error["error"]).into());
+    }
+
+    let auth_resp: AuthResponse = response.json().await?;
+    Ok(auth_resp)
+}
+
+pub fn decode_jwt_payload(jwt: &str) -> Result<JWTPayload, Box<dyn std::error::Error>> {
+    let parts: Vec<&str> = jwt.split('.').collect();
+    if parts.len() != 3 {
+        return Err("Invalid JWT format".into());
+    }
+
+    let payload_b64 = parts[1];
+    let payload_json = base64::decode(payload_b64)?;
+    let payload: JWTPayload = serde_json::from_slice(&payload_json)?;
+
+    Ok(payload)
+}
+
+pub fn is_jwt_expiring_soon(jwt: &str, threshold_seconds: u64) -> bool {
+    match decode_jwt_payload(jwt) {
+        Ok(payload) => {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            let time_until_expiry = payload.exp.saturating_sub(now);
+            time_until_expiry < threshold_seconds
+        }
+        Err(_) => true, // If we can't decode, assume expired
+    }
+}
+```
+
+**File: `utterd/src/websocket.rs`** (update registration)
+
+```rust
+// Add jwt field to RegisterMessage
+#[derive(Debug, Serialize)]
+struct RegisterMessage {
+    r#type: String,
+    client_type: String,
+    device_id: String,
+    device_name: String,
+    public_key: String,
+    jwt: String,  // Add this
+    version: String,
+    platform: String,
+    arch: String,
+}
+
+// Update register function
+pub async fn register(
+    ws: &mut WebSocket,
+    config: &Config,
+    jwt: &str
+) -> Result<(), Box<dyn std::error::Error>> {
+    let register_msg = RegisterMessage {
+        r#type: "register".to_string(),
+        client_type: "target".to_string(),
+        device_id: config.device_id.clone(),
+        device_name: config.device_name.clone(),
+        public_key: config.public_key.clone(),
+        jwt: jwt.to_string(),  // Include JWT
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        platform: get_platform_info(),
+        arch: std::env::consts::ARCH.to_string(),
+    };
+
+    let msg = serde_json::to_string(&register_msg)?;
+    ws.send(Message::Text(msg)).await?;
+
+    Ok(())
+}
+```
+
+**File: `utterd/src/main.rs`** (update main flow)
+
+```rust
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // ... existing setup ...
+
+    // 1. Get OAuth token from Google
+    let oauth_token = oauth::authenticate(&config).await?;
+
+    // 2. Exchange for JWT
+    let auth_url = config.relay_server.replace("ws://", "http://");
+    let mut auth_response = auth::exchange_for_jwt(&auth_url, &oauth_token).await?;
+    println!("✓ JWT obtained for {}", auth_response.user_id);
+
+    loop {
+        // 3. Check if JWT needs refresh before connecting
+        if auth::is_jwt_expiring_soon(&auth_response.jwt, 300) {
+            println!("↻ Refreshing JWT...");
+            auth_response = auth::refresh_jwt(&auth_url, &auth_response.jwt).await?;
+            println!("✓ JWT refreshed");
+        }
+
+        // 4. Connect with fresh JWT
+        let mut ws = websocket::connect(&config.relay_server).await?;
+        websocket::register(&mut ws, &config, &auth_response.jwt).await?;
+
+        // ... existing message handling ...
+
+        // On disconnect, loop will refresh JWT if needed and reconnect
+    }
+}
+```
+
+**File: `utterd/Cargo.toml`** (add dependencies)
+
+```toml
+[dependencies]
+reqwest = { version = "0.11", features = ["json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+base64 = "0.21"
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = "0.20"
+```
+
+### Testing Utterd Changes
+
+```bash
+# Build utterd with JWT support
+cd utterd
+cargo build --release
+
+# Run with OAuth credentials
+export GOOGLE_CLIENT_ID="your-client-id"
+export GOOGLE_CLIENT_SECRET="your-client-secret"
+./target/release/utterd
+
+# Expected output:
+# ✓ OAuth authentication successful
+# ✓ JWT obtained for user@gmail.com
+# ✓ Connected to relay server
+# ✓ Registered as target device
+```
+
+## Implementation Checklist
+
+- [x] Phase 1: Dual mode (JWT optional)
+- [ ] Phase 2: JWT Required
+  - [ ] Generate and set JWT_SECRET in .env
+  - [ ] Remove REQUIRE_JWT flag from code
+  - [ ] Add POST /auth/refresh endpoint
+  - [ ] Update relay server to always require JWT
+  - [ ] Update linux-test-client for token refresh
+  - [ ] Update utterd (Rust) for JWT support
+  - [ ] Test all components with enforced JWT
+- [ ] Phase 3: Advanced Features
+  - [ ] Multi-provider OAuth (GitHub, Microsoft)
+  - [ ] Custom JWT claims (device limits, features)
+  - [ ] Token revocation blacklist
 
 ## Future Enhancements
 
@@ -425,13 +734,14 @@ httpServer.listen(PORT);
 - JWT approach allows multiple OAuth providers
 - Google, GitHub, Microsoft, etc.
 - All issue JWTs with same structure
+- userId becomes provider-prefixed (e.g., "google:user@gmail.com")
 
 ### Custom Claims
-- Add device limits per user
-- Add feature flags
-- Add subscription tiers
+- Add device limits per user: `maxDevices: 10`
+- Add feature flags: `features: ["encryption", "voice"]`
+- Add subscription tiers: `tier: "pro"`
 
-### Refresh Tokens
-- Long-lived refresh token (encrypted, stored securely)
-- Short-lived access JWT
-- Standard OAuth 2.0 pattern
+### Token Revocation
+- Maintain in-memory blacklist of revoked JWTs
+- POST /auth/revoke endpoint
+- Short-lived JWTs minimize revocation window

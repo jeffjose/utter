@@ -138,6 +138,77 @@ class TestClient {
     return data.jwt;
   }
 
+  private async refreshJWT(currentJwt: string): Promise<string> {
+    // Convert WebSocket URL to HTTP URL for /auth/refresh endpoint
+    const httpUrl = this.serverUrl.replace(/^ws/, 'http');
+    const refreshUrl = new URL('/auth/refresh', httpUrl);
+
+    const response = await fetch(refreshUrl.toString(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ jwt: currentJwt })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(`JWT refresh failed: ${error.error || response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.jwt;
+  }
+
+  private decodeJWT(jwt: string): { userId: string; exp: number } {
+    try {
+      const parts = jwt.split('.');
+      if (parts.length !== 3) {
+        throw new Error('Invalid JWT format');
+      }
+
+      const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+      return payload;
+    } catch (error) {
+      throw new Error('Failed to decode JWT');
+    }
+  }
+
+  private isJWTExpiringSoon(jwt: string, thresholdSeconds: number = 300): boolean {
+    try {
+      const payload = this.decodeJWT(jwt);
+      const now = Math.floor(Date.now() / 1000);
+      const timeUntilExpiry = payload.exp - now;
+      return timeUntilExpiry < thresholdSeconds;
+    } catch (error) {
+      return true; // If we can't decode, assume expired
+    }
+  }
+
+  private async ensureFreshJWT(): Promise<void> {
+    if (!this.jwt) {
+      return;
+    }
+
+    if (this.isJWTExpiringSoon(this.jwt, 300)) {
+      console.log(`${colors.yellow}↻ Refreshing JWT...${colors.reset}`);
+      try {
+        this.jwt = await this.refreshJWT(this.jwt);
+        console.log(`${colors.green}✓ JWT refreshed${colors.reset}\n`);
+      } catch (error) {
+        console.log(`${colors.red}✗ JWT refresh failed: ${error instanceof Error ? error.message : String(error)}${colors.reset}`);
+        console.log(`${colors.yellow}⚠ Need to re-authenticate with Google${colors.reset}\n`);
+
+        // Re-authenticate with Google if we have OAuth manager
+        if (this.oauthManager) {
+          const tokens = await this.oauthManager.getOrAuthenticate();
+          this.jwt = await this.exchangeForJWT(tokens.idToken);
+          console.log(`${colors.green}✓ Re-authenticated and obtained new JWT${colors.reset}\n`);
+        }
+      }
+    }
+  }
+
   async initialize(): Promise<void> {
     // Initialize OAuth if credentials are provided
     const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -162,6 +233,9 @@ class TestClient {
   }
 
   async connect(): Promise<void> {
+    // Ensure JWT is fresh before connecting
+    await this.ensureFreshJWT();
+
     return new Promise((resolve, reject) => {
       this.ws = new WebSocket(this.serverUrl);
 

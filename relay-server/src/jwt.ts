@@ -76,3 +76,50 @@ export function verifyJWT(token: string): JWTPayload {
     }
   }
 }
+
+/**
+ * Decode JWT payload without verification (for refresh)
+ * @param token - JWT token to decode
+ * @returns Decoded payload
+ * @throws Error if token cannot be decoded
+ */
+export function decodeJWT(token: string): JWTPayload {
+  try {
+    const decoded = jwt.decode(token) as JWTPayload;
+    if (!decoded || !decoded.userId) {
+      throw new Error('Invalid JWT payload');
+    }
+    return decoded;
+  } catch (error: any) {
+    throw new Error(`Cannot decode JWT: ${error.message}`);
+  }
+}
+
+/**
+ * Refresh JWT - issues new JWT from expired one (if not too old)
+ * @param token - Expired JWT token
+ * @returns New JWT with fresh expiration
+ * @throws Error if token is too old or invalid
+ */
+export function refreshJWT(token: string): string {
+  try {
+    // Decode without verification to get payload
+    const payload = decodeJWT(token);
+
+    // Check if token expired more than 24 hours ago
+    const now = Math.floor(Date.now() / 1000);
+    const maxRefreshAge = 24 * 3600; // 24 hours in seconds
+
+    if (payload.exp && (now - payload.exp) > maxRefreshAge) {
+      throw new Error('JWT expired more than 24 hours ago. Please re-authenticate.');
+    }
+
+    // Issue new JWT with same userId but fresh expiration
+    return signJWT(payload.userId);
+  } catch (error: any) {
+    if (error.message.includes('expired more than 24 hours')) {
+      throw error;
+    }
+    throw new Error(`JWT refresh failed: ${error.message}`);
+  }
+}

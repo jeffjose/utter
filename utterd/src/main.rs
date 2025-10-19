@@ -1,3 +1,4 @@
+mod auth;
 mod crypto;
 mod oauth;
 
@@ -141,7 +142,7 @@ enum WsMessage {
         #[serde(skip_serializing_if = "Option::is_none")]
         arch: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        token: Option<String>,
+        jwt: Option<String>,
     },
     Registered,
     Text {
@@ -185,7 +186,7 @@ struct UtterClient {
     state: Arc<Mutex<AppState>>,
     key_manager: Option<Arc<KeyManager>>,
     message_encryption: Option<Arc<MessageEncryption>>,
-    id_token: Option<String>,
+    jwt: Option<String>,
 }
 
 impl UtterClient {
@@ -227,7 +228,7 @@ impl UtterClient {
             state,
             key_manager,
             message_encryption,
-            id_token: None,
+            jwt: None,
         }
     }
 
@@ -285,7 +286,7 @@ impl UtterClient {
                     version: Some(format!("utterd v{}", VERSION)),
                     platform: Some(get_platform_info()),
                     arch: Some(std::env::consts::ARCH.to_string()),
-                    token: self.id_token.clone(),
+                    jwt: self.jwt.clone(),
                 })
             }
             WsMessage::Registered => {
@@ -521,7 +522,19 @@ impl UtterClient {
             e
         })?;
 
-        self.id_token = Some(tokens.id_token);
+        // Exchange OAuth token for JWT
+        let http_url = self.server_url.replace("ws://", "http://").replace("wss://", "https://");
+        let auth_response = auth::exchange_for_jwt(&http_url, &tokens.id_token).await
+            .map_err(|e| {
+                eprintln!("{}✗ Failed to obtain JWT: {}{}", colors::RED, e, colors::RESET);
+                e
+            })?;
+
+        self.jwt = Some(auth_response.jwt);
+
+        println!("{}✓{} JWT obtained for {}{}{}",
+            colors::GREEN, colors::RESET,
+            colors::BRIGHT, auth_response.user_id, colors::RESET);
 
         // Print startup banner
         let hostname = get_hostname();
@@ -532,6 +545,35 @@ impl UtterClient {
 
         // Connection loop
         loop {
+            // Refresh JWT if expiring soon (< 5 minutes)
+            if let Some(ref current_jwt) = self.jwt {
+                if auth::is_jwt_expiring_soon(current_jwt, 300) {
+                    println!("{}↻ Refreshing JWT...{}", colors::YELLOW, colors::RESET);
+                    match auth::refresh_jwt(&http_url, current_jwt).await {
+                        Ok(new_auth_response) => {
+                            self.jwt = Some(new_auth_response.jwt);
+                            println!("{}✓{} JWT refreshed", colors::GREEN, colors::RESET);
+                        }
+                        Err(e) => {
+                            eprintln!("{}✗ JWT refresh failed: {}{}", colors::RED, e, colors::RESET);
+                            eprintln!("{}Re-authenticating with Google...{}", colors::YELLOW, colors::RESET);
+
+                            // Re-authenticate with Google
+                            let new_tokens = tokio::task::spawn_blocking(|| {
+                                let oauth_manager = oauth::OAuthManager::new()?;
+                                oauth_manager.get_or_authenticate()
+                            })
+                            .await
+                            .map_err(|e| format!("OAuth task failed: {}", e))??;
+
+                            let new_auth_response = auth::exchange_for_jwt(&http_url, &new_tokens.id_token).await?;
+                            self.jwt = Some(new_auth_response.jwt);
+                            println!("{}✓{} Re-authenticated and obtained new JWT", colors::GREEN, colors::RESET);
+                        }
+                    }
+                }
+            }
+
             // Try to connect
             if let Err(e) = self.connect().await {
                 print!("\r\x1b[K{}✗ {}{}", colors::RED, e, colors::RESET);
@@ -556,7 +598,7 @@ impl Clone for UtterClient {
             state: self.state.clone(),
             key_manager: self.key_manager.clone(),
             message_encryption: self.message_encryption.clone(),
-            id_token: self.id_token.clone(),
+            jwt: self.jwt.clone(),
         }
     }
 }

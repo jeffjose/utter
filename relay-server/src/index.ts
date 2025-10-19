@@ -5,14 +5,13 @@ import * as path from 'path';
 import * as http from 'http';
 import express from 'express';
 import { verifyGoogleToken } from './auth';
-import { signJWT, verifyJWT, getExpirationSeconds } from './jwt';
+import { signJWT, verifyJWT, refreshJWT, getExpirationSeconds } from './jwt';
 
 // Load environment from root .env file
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 8080;
 const MAX_MESSAGE_LENGTH = process.env.MAX_MESSAGE_LENGTH ? parseInt(process.env.MAX_MESSAGE_LENGTH) : 5000;
-const REQUIRE_JWT = process.env.REQUIRE_JWT === 'true';
 
 // ANSI color codes
 const colors = {
@@ -108,6 +107,47 @@ app.post('/auth', async (req, res) => {
   }
 });
 
+// Refresh endpoint - refresh JWT before expiration
+app.post('/auth/refresh', async (req, res) => {
+  try {
+    const { jwt: currentJwt } = req.body;
+
+    if (!currentJwt) {
+      return res.status(400).json({
+        error: 'Missing jwt in request body'
+      });
+    }
+
+    // Refresh JWT (validates and issues new one)
+    const newJwt = refreshJWT(currentJwt);
+    const expiresIn = getExpirationSeconds();
+
+    // Decode to get userId for response
+    const payload = require('jsonwebtoken').decode(newJwt) as any;
+
+    console.log(`${colors.green}↻${colors.reset} JWT refreshed for ${colors.bright}${payload.userId}${colors.reset}`);
+
+    res.json({
+      jwt: newJwt,
+      expiresIn,
+      userId: payload.userId
+    });
+  } catch (error: any) {
+    console.error(`${colors.red}✗${colors.reset} Refresh error:`, error.message);
+
+    // Return appropriate error status
+    if (error.message.includes('expired more than 24 hours') || error.message.includes('Invalid JWT')) {
+      return res.status(401).json({
+        error: error.message
+      });
+    }
+
+    res.status(500).json({
+      error: 'Internal server error'
+    });
+  }
+});
+
 // Create HTTP server
 const httpServer = http.createServer(app);
 
@@ -161,11 +201,7 @@ httpServer.listen(PORT, () => {
   console.log(`  Physical: ${colors.gray}Use network address above${colors.reset}`);
   console.log('');
   console.log(`${colors.dim}Authentication:${colors.reset}`);
-  if (REQUIRE_JWT) {
-    console.log(`  ${colors.red}●${colors.reset} JWT ${colors.bright}REQUIRED${colors.reset}`);
-  } else {
-    console.log(`  ${colors.yellow}●${colors.reset} JWT ${colors.dim}optional (legacy mode)${colors.reset}`);
-  }
+  console.log(`  ${colors.red}●${colors.reset} JWT ${colors.bright}REQUIRED${colors.reset}`);
   console.log(`${colors.gray}${'─'.repeat(60)}${colors.reset}`);
   console.log('');
 });
@@ -237,26 +273,8 @@ wss.on('connection', (ws: WebSocket) => {
 });
 
 function handleRegister(client: Client, message: any) {
-  // JWT Authentication
-  let authenticatedUserId: string | undefined;
-
-  if (message.jwt) {
-    // JWT provided - verify it
-    try {
-      const payload = verifyJWT(message.jwt);
-      authenticatedUserId = payload.userId;
-      console.log(`${colors.dim}[${client.id}]${colors.reset} ${colors.green}✓${colors.reset} JWT verified for ${colors.bright}${authenticatedUserId}${colors.reset}`);
-    } catch (error: any) {
-      console.error(`${colors.dim}[${client.id}]${colors.reset} ${colors.red}✗${colors.reset} JWT verification failed:`, error.message);
-      client.ws.send(JSON.stringify({
-        type: 'error',
-        message: error.message,
-        timestamp: Date.now()
-      }));
-      return;
-    }
-  } else if (REQUIRE_JWT) {
-    // JWT required but not provided
+  // JWT Authentication - REQUIRED
+  if (!message.jwt) {
     console.error(`${colors.dim}[${client.id}]${colors.reset} ${colors.red}✗${colors.reset} JWT required but not provided`);
     client.ws.send(JSON.stringify({
       type: 'error',
@@ -264,12 +282,22 @@ function handleRegister(client: Client, message: any) {
       timestamp: Date.now()
     }));
     return;
-  } else {
-    // Legacy mode - JWT not required
-    if (message.userId) {
-      authenticatedUserId = message.userId;
-      console.log(`${colors.dim}[${client.id}]${colors.reset} ${colors.yellow}⚠${colors.reset} Legacy mode: accepting userId without JWT`);
-    }
+  }
+
+  // Verify JWT
+  let authenticatedUserId: string;
+  try {
+    const payload = verifyJWT(message.jwt);
+    authenticatedUserId = payload.userId;
+    console.log(`${colors.dim}[${client.id}]${colors.reset} ${colors.green}✓${colors.reset} JWT verified for ${colors.bright}${authenticatedUserId}${colors.reset}`);
+  } catch (error: any) {
+    console.error(`${colors.dim}[${client.id}]${colors.reset} ${colors.red}✗${colors.reset} JWT verification failed:`, error.message);
+    client.ws.send(JSON.stringify({
+      type: 'error',
+      message: error.message,
+      timestamp: Date.now()
+    }));
+    return;
   }
 
   // Validate public key if provided
@@ -299,10 +327,8 @@ function handleRegister(client: Client, message: any) {
   client.platform = message.platform;
   client.arch = message.arch;
 
-  // Use authenticated userId from JWT (or legacy userId if JWT not required)
-  if (authenticatedUserId) {
-    client.userId = authenticatedUserId;
-  }
+  // Use authenticated userId from JWT
+  client.userId = authenticatedUserId;
 
   const typeColor = client.type === 'target' ? colors.blue : client.type === 'android' ? colors.magenta : client.type === 'controller' ? colors.cyan : colors.gray;
 
