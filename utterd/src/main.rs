@@ -474,20 +474,13 @@ impl UtterClient {
         })?;
 
         self.id_token = Some(tokens.id_token);
-        println!();
 
         // Print startup banner
-        println!();
-        println!("{}{}🎤 utterd{} {}v{}{}",
-            colors::BRIGHT, colors::CYAN, colors::RESET, colors::DIM, VERSION, colors::RESET);
-        println!("{}{}{}", colors::GRAY, "─".repeat(60), colors::RESET);
         let hostname = get_hostname();
-        println!("{}Device:{} {}", colors::DIM, colors::RESET, hostname);
-        println!("{}Server:{} {}", colors::DIM, colors::RESET, self.server_url);
-        let tool = if self.use_ydotool { "ydotool" } else { "xdotool" };
-        println!("{}Tool:{} {}", colors::DIM, colors::RESET, tool);
-        println!("{}{}{}", colors::GRAY, "─".repeat(60), colors::RESET);
-        println!();
+        println!("{}{}Utter{} {}Daemon{}",
+            colors::BRIGHT, colors::CYAN, colors::RESET, colors::DIM, colors::RESET);
+        println!("{}{} • {}{}\n",
+            colors::GRAY, self.server_url, hostname, colors::RESET);
 
         // Connection loop
         loop {
