@@ -1,9 +1,12 @@
+mod crypto;
+
 use clap::Parser;
 use crossterm::{
     event::{self, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use crypto::{KeyManager, MessageEncryption, EncryptedMessage};
 use futures_util::{SinkExt, StreamExt};
 use ratatui::{
     backend::CrosstermBackend,
@@ -57,10 +60,18 @@ enum WsMessage {
         device_id: String,
         #[serde(rename = "deviceName")]
         device_name: String,
+        #[serde(rename = "publicKey", skip_serializing_if = "Option::is_none")]
+        public_key: Option<String>,
     },
     Registered,
     Text {
         content: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        encrypted: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        nonce: Option<String>,
+        #[serde(rename = "ephemeralPublicKey", skip_serializing_if = "Option::is_none")]
+        ephemeral_public_key: Option<String>,
     },
     Pong,
 }
@@ -96,6 +107,8 @@ struct UtterClient {
     server_url: String,
     use_ydotool: bool,
     state: Arc<Mutex<AppState>>,
+    key_manager: Option<KeyManager>,
+    message_encryption: Option<MessageEncryption>,
 }
 
 impl UtterClient {
@@ -111,10 +124,37 @@ impl UtterClient {
             tool_status,
         )));
 
+        // Initialize crypto
+        let mut key_manager = KeyManager::new().ok();
+        let message_encryption = if let Some(ref mut km) = key_manager {
+            if let Err(e) = km.get_or_generate_keypair() {
+                eprintln!("[Crypto] Failed to initialize keypair: {}", e);
+                None
+            } else {
+                // Create MessageEncryption
+                if let (Ok(priv_key), Ok(pub_key)) =
+                    (km.get_private_key_bytes(), km.get_public_key_bytes()) {
+                    Some(MessageEncryption::new(priv_key, pub_key))
+                } else {
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        if message_encryption.is_some() {
+            println!("[Crypto] E2E encryption enabled");
+        } else {
+            println!("[Crypto] E2E encryption disabled (running in plaintext mode)");
+        }
+
         Self {
             server_url,
             use_ydotool,
             state,
+            key_manager,
+            message_encryption,
         }
     }
 
@@ -157,29 +197,74 @@ impl UtterClient {
                 state.client_id = Some(client_id);
                 state.status = "Connected".to_string();
                 let hostname = get_hostname();
+
+                // Get public key if crypto is enabled
+                let public_key = if let Some(ref km) = self.key_manager {
+                    km.get_public_key_base64().ok()
+                } else {
+                    None
+                };
+
+                if public_key.is_some() {
+                    println!("[Crypto] Including public key in registration");
+                }
+
                 Some(WsMessage::Register {
                     client_type: "linux".to_string(),
                     device_id: hostname.clone(),
                     device_name: hostname,
+                    public_key,
                 })
             }
             WsMessage::Registered => {
                 state.status = "Registered - Ready".to_string();
                 None
             }
-            WsMessage::Text { content } => {
+            WsMessage::Text { content, encrypted, nonce, ephemeral_public_key } => {
                 state.messages_received += 1;
 
-                // Truncate for display
-                let display_text = if content.len() > 50 {
-                    format!("{}...", &content[..50])
+                // Decrypt if encrypted
+                let plaintext = if encrypted.unwrap_or(false) {
+                    if let (Some(ref enc), Some(nonce_str), Some(eph_key)) =
+                        (&self.message_encryption, nonce, ephemeral_public_key) {
+
+                        let encrypted_msg = EncryptedMessage {
+                            ciphertext: content,
+                            nonce: nonce_str,
+                            ephemeral_public_key: eph_key,
+                        };
+
+                        match enc.decrypt(&encrypted_msg, "") {
+                            Ok(plaintext) => {
+                                println!("[Crypto] Message decrypted successfully");
+                                plaintext
+                            }
+                            Err(e) => {
+                                let err_msg = format!("Decryption failed: {}", e);
+                                state.last_error = err_msg.clone();
+                                eprintln!("[Crypto] {}", err_msg);
+                                return None;
+                            }
+                        }
+                    } else {
+                        state.last_error = "Received encrypted message but crypto not initialized".to_string();
+                        return None;
+                    }
                 } else {
-                    content.clone()
+                    // Plaintext message
+                    content
+                };
+
+                // Truncate for display
+                let display_text = if plaintext.len() > 50 {
+                    format!("{}...", &plaintext[..50])
+                } else {
+                    plaintext.clone()
                 };
                 state.last_text = display_text;
 
                 // Simulate typing
-                if let Err(e) = self.simulate_typing(&content) {
+                if let Err(e) = self.simulate_typing(&plaintext) {
                     state.last_error = e;
                 }
                 None
@@ -451,6 +536,8 @@ impl Clone for UtterClient {
             server_url: self.server_url.clone(),
             use_ydotool: self.use_ydotool,
             state: self.state.clone(),
+            key_manager: None,  // Crypto not cloned - each instance should have its own
+            message_encryption: None,
         }
     }
 }
