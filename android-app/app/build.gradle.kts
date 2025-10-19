@@ -80,6 +80,7 @@ dependencies {
 
     // Cryptography for E2E encryption
     implementation("com.google.crypto.tink:tink-android:1.13.0")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.77")
 
     // Google Sign-In for OAuth
     implementation("com.google.android.gms:play-services-auth:21.0.0")

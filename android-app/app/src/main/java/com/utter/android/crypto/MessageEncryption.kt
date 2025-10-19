@@ -4,13 +4,14 @@ import android.util.Base64
 import android.util.Log
 import java.security.SecureRandom
 import javax.crypto.Cipher
-import javax.crypto.KeyAgreement
 import javax.crypto.Mac
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
-import java.security.*
-import java.security.spec.X509EncodedKeySpec
-import javax.crypto.spec.IvParameterSpec
+import org.bouncycastle.crypto.agreement.X25519Agreement
+import org.bouncycastle.crypto.generators.X25519KeyPairGenerator
+import org.bouncycastle.crypto.params.X25519KeyGenerationParameters
+import org.bouncycastle.crypto.params.X25519PrivateKeyParameters
+import org.bouncycastle.crypto.params.X25519PublicKeyParameters
 
 /**
  * Data class for encrypted messages
@@ -115,51 +116,40 @@ class MessageEncryption(private val keyManager: KeyManager) {
     }
 
     /**
-     * Generate X25519 ephemeral keypair
+     * Generate X25519 ephemeral keypair using Bouncy Castle
      *
      * Returns Pair(privateKey, publicKey) as byte arrays
      */
     private fun generateX25519KeyPair(): Pair<ByteArray, ByteArray> {
-        // For demonstration, generate random keys
-        // In production, use proper X25519 implementation
-        val privateKey = ByteArray(32)
-        SecureRandom().nextBytes(privateKey)
+        val random = SecureRandom()
+        val keyPairGenerator = X25519KeyPairGenerator()
+        keyPairGenerator.init(X25519KeyGenerationParameters(random))
 
-        // Derive public key from private (placeholder)
-        val publicKey = deriveX25519PublicKey(privateKey)
+        val keyPair = keyPairGenerator.generateKeyPair()
+        val privateKey = keyPair.private as X25519PrivateKeyParameters
+        val publicKey = keyPair.public as X25519PublicKeyParameters
 
-        return Pair(privateKey, publicKey)
+        return Pair(privateKey.encoded, publicKey.encoded)
     }
 
     /**
-     * Derive X25519 public key from private key
-     */
-    private fun deriveX25519PublicKey(privateKey: ByteArray): ByteArray {
-        // Placeholder: hash the private key
-        // In production: use proper Curve25519 scalar multiplication
-        val digest = MessageDigest.getInstance("SHA-256")
-        return digest.digest(privateKey)
-    }
-
-    /**
-     * Perform Diffie-Hellman key exchange using X25519
+     * Perform Diffie-Hellman key exchange using X25519 (Bouncy Castle)
      *
-     * @param myPrivateKey My X25519 private key
-     * @param theirPublicKey Their X25519 public key
+     * @param myPrivateKey My X25519 private key (32 bytes)
+     * @param theirPublicKey Their X25519 public key (32 bytes)
      * @return Shared secret (32 bytes)
      */
     private fun performECDH(myPrivateKey: ByteArray, theirPublicKey: ByteArray): ByteArray {
-        // Simplified ECDH using XOR for demonstration
-        // In production: use proper X25519 implementation
-        val sharedSecret = ByteArray(32)
-        for (i in 0 until 32) {
-            sharedSecret[i] = (myPrivateKey[i % myPrivateKey.size].toInt() xor
-                    theirPublicKey[i % theirPublicKey.size].toInt()).toByte()
-        }
+        val privateKeyParams = X25519PrivateKeyParameters(myPrivateKey, 0)
+        val publicKeyParams = X25519PublicKeyParameters(theirPublicKey, 0)
 
-        // Additional mixing with SHA-256
-        val digest = MessageDigest.getInstance("SHA-256")
-        return digest.digest(sharedSecret)
+        val agreement = X25519Agreement()
+        agreement.init(privateKeyParams)
+
+        val sharedSecret = ByteArray(agreement.agreementSize)
+        agreement.calculateAgreement(publicKeyParams, sharedSecret, 0)
+
+        return sharedSecret
     }
 
     /**

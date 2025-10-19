@@ -202,8 +202,6 @@ async function handleRegister(client: Client, message: any) {
   try {
     const userInfo = await verifyGoogleToken(message.token);
     client.userId = userInfo.email;
-
-    console.log(`${colors.dim}[${client.id}]${colors.reset} ${colors.green}✓${colors.reset} OAuth verified: ${userInfo.email}`);
   } catch (err: any) {
     console.error(`${colors.dim}[${client.id}]${colors.reset} ${colors.red}✗${colors.reset} OAuth failed:`, err.message);
     client.ws.send(JSON.stringify({
@@ -237,8 +235,6 @@ async function handleRegister(client: Client, message: any) {
 function handleGetDevices(client: Client) {
   const devices: Device[] = [];
 
-  console.log(`${colors.dim}[${client.id}]${colors.reset} ${colors.cyan}→${colors.reset} get_devices ${colors.dim}(type=${client.type}, user=${client.userId})${colors.reset}`);
-
   // Get devices for this user
   // Controllers only see targets (devices they can send commands to)
   clients.forEach((c) => {
@@ -259,8 +255,6 @@ function handleGetDevices(client: Client) {
       });
     }
   });
-
-  console.log(`${colors.dim}[${client.id}]${colors.reset} ${colors.cyan}←${colors.reset} Sending ${devices.length} device(s): ${devices.map(d => `${d.deviceName} (${d.deviceType})`).join(', ')}`);
 
   client.ws.send(JSON.stringify({
     type: 'devices',
