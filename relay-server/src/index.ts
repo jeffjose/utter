@@ -1,7 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import * as dotenv from 'dotenv';
 import * as os from 'os';
-import { ed25519 } from '@noble/curves/ed25519';
 
 dotenv.config();
 
@@ -156,10 +155,9 @@ function handleRegister(client: Client, message: any) {
       if (keyBytes.length !== 32) {
         throw new Error('Invalid Ed25519 public key length');
       }
-      // Verify it's a valid Ed25519 public key by attempting to use it
-      ed25519.getPublicKey(new Uint8Array(32)); // Just to ensure library is working
+      // Store the validated key
       client.publicKey = message.publicKey;
-      console.log(`[${client.id}] Public key validated and stored`);
+      console.log(`[${client.id}] Public key validated and stored (${keyBytes.length} bytes)`);
     } catch (err) {
       console.error(`[${client.id}] Invalid public key:`, err);
       client.ws.send(JSON.stringify({
