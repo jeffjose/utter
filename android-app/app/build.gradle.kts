@@ -36,6 +36,7 @@ android {
         // Android credentials (package + SHA-1) are used automatically by Google Play Services
         buildConfigField("String", "GOOGLE_CLIENT_ID", "\"${envProperties.getProperty("GOOGLE_CLIENT_ID")}\"")
         buildConfigField("String", "SERVER_URL", "\"${envProperties.getProperty("SERVER_URL", "ws://localhost:8080")}\"")
+        buildConfigField("String", "VERSION_NAME", "\"${versionName}\"")
     }
 
     buildTypes {

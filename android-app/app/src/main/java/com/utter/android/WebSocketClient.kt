@@ -76,11 +76,25 @@ class WebSocketClient(
                                           System.currentTimeMillis().toString().takeLast(6)
                             val deviceName = android.os.Build.MODEL
 
+                            // Build platform info: "Android {version} (SDK {sdkInt})"
+                            val platformInfo = "Android ${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT})"
+
+                            // Get primary CPU architecture
+                            val arch = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                                android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"
+                            } else {
+                                @Suppress("DEPRECATION")
+                                android.os.Build.CPU_ABI
+                            }
+
                             val registerMsg = JSONObject().apply {
                                 put("type", "register")
                                 put("clientType", "controller")
                                 put("deviceId", deviceId)
                                 put("deviceName", deviceName)
+                                put("version", "android-app v${BuildConfig.VERSION_NAME}")
+                                put("platform", platformInfo)
+                                put("arch", arch)
 
                                 // Include public key if crypto is enabled
                                 cryptoManager?.let {
