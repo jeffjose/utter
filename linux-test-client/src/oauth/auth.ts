@@ -112,7 +112,7 @@ export class OAuthManager {
             const oauthTokens: OAuthTokens = {
               idToken: tokens.id_token,
               accessToken: tokens.access_token!,
-              refreshToken: tokens.refresh_token,
+              refreshToken: tokens.refresh_token ?? undefined,
               expiresAt,
             };
 

@@ -472,9 +472,53 @@ Security:
   }
 }
 
+function showUsage(): void {
+  console.log(`
+${colors.bright}${colors.cyan}Utter${colors.reset} ${colors.dim}Test Client v${VERSION}${colors.reset}
+
+${colors.bright}Usage:${colors.reset}
+  linux-test-client [options]
+
+${colors.bright}Options:${colors.reset}
+  --help, -h              Show this help message
+  --server <url>          WebSocket server URL (default: ws://localhost:8080)
+                          Can also be set via UTTER_RELAY_SERVER environment variable
+  --device-id <id>        Device ID (default: auto-generated from hostname)
+  --device-name <name>    Device name (default: same as device ID)
+
+${colors.bright}Environment Variables:${colors.reset}
+  UTTER_RELAY_SERVER      WebSocket server URL
+  GOOGLE_CLIENT_ID        Google OAuth client ID (optional)
+  GOOGLE_CLIENT_SECRET    Google OAuth client secret (optional)
+
+${colors.bright}Examples:${colors.reset}
+  # Connect to default server
+  linux-test-client
+
+  # Connect to custom server
+  linux-test-client --server wss://relay.example.com
+
+  # Connect with custom device name
+  linux-test-client --device-name "My Test Client"
+
+${colors.bright}Interactive Commands:${colors.reset}
+  /help              Show available commands
+  /devices           List connected devices
+  /device <number>   Select target device
+  /status            Show connection status
+  /quit, /exit       Exit the client
+`);
+}
+
 // Main
 async function main() {
   const args = process.argv.slice(2);
+
+  // Check for help flag first
+  if (args.includes('--help') || args.includes('-h')) {
+    showUsage();
+    process.exit(0);
+  }
 
   // Parse arguments
   let serverUrl = process.env.UTTER_RELAY_SERVER || 'ws://localhost:8080';
