@@ -80,7 +80,6 @@ impl OAuthManager {
 
                     // If token valid for at least 5 more minutes
                     if tokens.expires_at > now + chrono::Duration::minutes(5) {
-                        println!("✓ Using cached OAuth token");
                         return Ok(tokens);
                     } else if let Some(ref refresh_token) = tokens.refresh_token {
                         // Try to refresh
