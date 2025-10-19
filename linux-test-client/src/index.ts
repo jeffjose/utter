@@ -57,7 +57,7 @@ class TestClient {
       this.ws = new WebSocket(this.serverUrl);
 
       this.ws.on('open', () => {
-        console.log(`${colors.green}✓ Connected${colors.reset}`);
+        process.stdout.write(`\r\x1b[K${colors.green}✓ Connected${colors.reset}\n`);
         this.connected = true;
         this.reconnectAttempts = 0;
         this.updatePrompt(); // Update prompt to show connected state
@@ -70,7 +70,7 @@ class TestClient {
       });
 
       this.ws.on('close', () => {
-        console.log(`${colors.red}✗ Disconnected${colors.reset}`);
+        process.stdout.write(`\r\x1b[K${colors.red}✗ Disconnected${colors.reset}`);
         this.connected = false;
         this.updatePrompt(); // Update prompt to show disconnected state
         this.scheduleReconnect();
@@ -86,7 +86,7 @@ class TestClient {
     this.reconnectAttempts++;
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), this.maxReconnectDelay);
 
-    console.log(`${colors.gray}Reconnecting in ${delay / 1000}s...${colors.reset}`);
+    process.stdout.write(`\r\x1b[K${colors.red}✗ Disconnected${colors.reset} ${colors.gray}— Reconnecting in ${delay / 1000}s...${colors.reset}`);
 
     setTimeout(() => {
       this.connect().catch(() => {
