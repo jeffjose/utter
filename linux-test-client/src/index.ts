@@ -72,6 +72,13 @@ function stripWsPrefix(url: string): string {
   return url.replace(/^wss?:\/\//, '');
 }
 
+function normalizeServerUrl(url: string): string {
+  if (url.startsWith('ws://') || url.startsWith('wss://')) {
+    return url;
+  }
+  return `ws://${url}`;
+}
+
 class TestClient {
   private ws: WebSocket | null = null;
   private connected: boolean = false;
@@ -538,6 +545,9 @@ async function main() {
       i++;
     }
   }
+
+  // Normalize server URL (add ws:// if missing)
+  serverUrl = normalizeServerUrl(serverUrl);
 
   // Client format: hostname-client-shortid
   const hostname = os.hostname();

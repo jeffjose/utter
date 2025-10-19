@@ -60,6 +60,14 @@ fn strip_ws_prefix(url: &str) -> &str {
         .unwrap_or(url)
 }
 
+fn normalize_server_url(url: &str) -> String {
+    if url.starts_with("ws://") || url.starts_with("wss://") {
+        url.to_string()
+    } else {
+        format!("ws://{}", url)
+    }
+}
+
 /// utterd - Voice dictation from Android to Linux
 #[derive(Parser)]
 #[command(name = "utterd")]
@@ -528,6 +536,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(1);
     }
 
-    let mut client = UtterClient::new(args.server, args.tool);
+    // Normalize server URL (add ws:// if missing)
+    let server_url = normalize_server_url(&args.server);
+
+    let mut client = UtterClient::new(server_url, args.tool);
     client.run().await
 }
