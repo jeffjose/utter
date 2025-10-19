@@ -237,13 +237,19 @@ async function handleRegister(client: Client, message: any) {
 function handleGetDevices(client: Client) {
   const devices: Device[] = [];
 
-  // Get all devices for this user
+  // Get devices for this user
+  // Controllers only see targets (devices they can send commands to)
   clients.forEach((c) => {
     if (c.userId === client.userId && c.deviceId) {
+      // Controllers only see targets
+      if (client.type === 'controller' && c.type !== 'target') {
+        return;
+      }
+
       devices.push({
         deviceId: c.deviceId,
         deviceName: c.deviceName || c.deviceId,
-        deviceType: c.type as 'android' | 'target',
+        deviceType: c.type as 'controller' | 'target',
         userId: c.userId || 'test-user',
         publicKey: c.publicKey,
         status: c.status,

@@ -78,7 +78,7 @@ class WebSocketClient(
 
                             val registerMsg = JSONObject().apply {
                                 put("type", "register")
-                                put("clientType", "android")
+                                put("clientType", "controller")
                                 put("deviceId", deviceId)
                                 put("deviceName", deviceName)
 
