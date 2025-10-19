@@ -29,15 +29,7 @@ All devices under the same Google account can communicate with each other (Tails
 
 ---
 
-## Step 2: Enable Required APIs
-
-1. In the left menu, go to **"APIs & Services"** → **"Library"**
-2. Search for **"Google+ API"** and click **"Enable"**
-   - *(Required for user profile information)*
-
----
-
-## Step 3: Configure OAuth Consent Screen
+## Step 2: Configure OAuth Consent Screen
 
 1. Go to **"APIs & Services"** → **"OAuth consent screen"**
 2. Select **"External"** user type (unless you have a Google Workspace)
@@ -62,11 +54,11 @@ All devices under the same Google account can communicate with each other (Tails
 
 ---
 
-## Step 4: Create OAuth Credentials
+## Step 3: Create OAuth Credentials
 
 You need to create **3 different credentials** for the 3 different client types.
 
-### 4.1. Relay Server & linux-test-client (Web Application)
+### 3.1. Relay Server & linux-test-client (Web Application)
 
 For the relay server (verification only) and linux-test-client (browser-based flow):
 
@@ -97,7 +89,7 @@ GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-client-secret
 ```
 
-### 4.2. utterd (CLI Application)
+### 3.2. utterd (CLI Application)
 
 For utterd (device authorization flow):
 
@@ -118,7 +110,7 @@ GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com cargo run
 export GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 ```
 
-### 4.3. Android App
+### 3.3. Android App
 
 For Android app (Google Play Services):
 
@@ -152,7 +144,7 @@ For Android app (Google Play Services):
 
 ---
 
-## Step 5: Testing
+## Step 4: Testing
 
 ### Test Mode (Development)
 
