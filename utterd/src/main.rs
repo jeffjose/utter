@@ -1,4 +1,5 @@
 mod crypto;
+mod oauth;
 
 use clap::Parser;
 use crypto::{KeyManager, MessageEncryption, EncryptedMessage};
@@ -89,10 +90,16 @@ enum WsMessage {
         platform: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         arch: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        token: Option<String>,
     },
     Registered,
     Text {
         content: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        from: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timestamp: Option<i64>,
         #[serde(skip_serializing_if = "Option::is_none")]
         encrypted: Option<bool>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -126,6 +133,7 @@ struct UtterClient {
     state: Arc<Mutex<AppState>>,
     key_manager: Option<Arc<KeyManager>>,
     message_encryption: Option<Arc<MessageEncryption>>,
+    id_token: Option<String>,
 }
 
 impl UtterClient {
@@ -167,6 +175,7 @@ impl UtterClient {
             state,
             key_manager,
             message_encryption,
+            id_token: None,
         }
     }
 
@@ -208,6 +217,8 @@ impl UtterClient {
                 state.client_id = Some(client_id.clone());
                 drop(state);
 
+                println!("{}✓ Connected to relay{}", colors::GREEN, colors::RESET);
+
                 let hostname = get_hostname();
 
                 // Get public key if crypto is enabled
@@ -225,13 +236,14 @@ impl UtterClient {
                     version: Some(format!("utterd v{}", VERSION)),
                     platform: Some(get_platform_info()),
                     arch: Some(std::env::consts::ARCH.to_string()),
+                    token: self.id_token.clone(),
                 })
             }
             WsMessage::Registered => {
-                println!("{}●{} Connected", colors::GREEN, colors::RESET);
+                println!("{}✓ Ready{}", colors::GREEN, colors::RESET);
                 None
             }
-            WsMessage::Text { content, encrypted, nonce, ephemeral_public_key } => {
+            WsMessage::Text { content, encrypted, nonce, ephemeral_public_key, .. } => {
                 // ENFORCE ENCRYPTION: Reject plaintext messages
                 if !encrypted.unwrap_or(false) {
                     println!("\r\x1b[K{}✗ Rejected plaintext message{}", colors::RED, colors::RESET);
@@ -356,7 +368,7 @@ impl UtterClient {
         Ok(())
     }
 
-    async fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if !self.check_dependencies() {
             let tool = if self.use_ydotool { "ydotool" } else { "xdotool" };
             eprintln!("\n{}✗ {} not found{}", colors::RED, tool, colors::RESET);
@@ -364,6 +376,31 @@ impl UtterClient {
             eprintln!("\n{}Install command:{}", colors::DIM, colors::RESET);
             eprintln!("  {}sudo apt install {}{}", colors::CYAN, tool, colors::RESET);
             return Ok(());
+        }
+
+        // Initialize OAuth if CLIENT_ID is set
+        if let Ok(client_id) = std::env::var("GOOGLE_CLIENT_ID") {
+            match oauth::OAuthManager::new(client_id) {
+                Ok(oauth_manager) => {
+                    match oauth_manager.get_or_authenticate() {
+                        Ok(tokens) => {
+                            self.id_token = Some(tokens.id_token);
+                            println!();
+                        }
+                        Err(e) => {
+                            eprintln!("{}⚠ OAuth failed: {}{}", colors::YELLOW, e, colors::RESET);
+                            eprintln!("{}Continuing in test mode...{}\n", colors::DIM, colors::RESET);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("{}⚠ OAuth init failed: {}{}", colors::YELLOW, e, colors::RESET);
+                    eprintln!("{}Continuing in test mode...{}\n", colors::DIM, colors::RESET);
+                }
+            }
+        } else {
+            println!("{}⚠ No GOOGLE_CLIENT_ID found. Running in test mode.{}", colors::YELLOW, colors::RESET);
+            println!("{}Set GOOGLE_CLIENT_ID environment variable to enable OAuth.{}\n", colors::GRAY, colors::RESET);
         }
 
         // Print startup banner
@@ -405,6 +442,7 @@ impl Clone for UtterClient {
             state: self.state.clone(),
             key_manager: self.key_manager.clone(),
             message_encryption: self.message_encryption.clone(),
+            id_token: self.id_token.clone(),
         }
     }
 }
@@ -412,6 +450,6 @@ impl Clone for UtterClient {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let client = UtterClient::new(args.server, args.ydotool);
+    let mut client = UtterClient::new(args.server, args.ydotool);
     client.run().await
 }

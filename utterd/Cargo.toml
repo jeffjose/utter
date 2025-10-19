@@ -28,4 +28,4 @@ dirs = "5.0"
 # OAuth for Google authentication
 reqwest = { version = "0.11", features = ["json", "blocking"] }
 serde_urlencoded = "0.7"
-chrono = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
