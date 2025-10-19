@@ -396,9 +396,12 @@ impl UtterClient {
             return Ok(());
         }
 
-        // Initialize OAuth if CLIENT_ID is set
-        if let Ok(client_id) = std::env::var("GOOGLE_CLIENT_ID") {
-            match oauth::OAuthManager::new(client_id) {
+        // Initialize OAuth if CLIENT_ID and CLIENT_SECRET are set
+        if let (Ok(client_id), Ok(client_secret)) = (
+            std::env::var("GOOGLE_CLIENT_ID"),
+            std::env::var("GOOGLE_CLIENT_SECRET")
+        ) {
+            match oauth::OAuthManager::new(client_id, client_secret) {
                 Ok(oauth_manager) => {
                     match oauth_manager.get_or_authenticate() {
                         Ok(tokens) => {
@@ -417,8 +420,8 @@ impl UtterClient {
                 }
             }
         } else {
-            println!("{}⚠ No GOOGLE_CLIENT_ID found. Running in test mode.{}", colors::YELLOW, colors::RESET);
-            println!("{}Set GOOGLE_CLIENT_ID environment variable to enable OAuth.{}\n", colors::GRAY, colors::RESET);
+            println!("{}⚠ No OAuth credentials found. Running in test mode.{}", colors::YELLOW, colors::RESET);
+            println!("{}Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to enable OAuth.{}\n", colors::GRAY, colors::RESET);
         }
 
         // Print startup banner

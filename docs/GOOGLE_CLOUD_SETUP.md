@@ -56,11 +56,11 @@ All devices under the same Google account can communicate with each other (Tails
 
 ## Step 3: Create OAuth Credentials
 
-You need to create **3 different credentials** for the 3 different client types.
+You need to create **2 different credentials** for the different client types.
 
-### 3.1. Relay Server & linux-test-client (Web Application)
+### 3.1. Relay Server, utterd & linux-test-client (Web Application)
 
-For the relay server (verification only) and linux-test-client (browser-based flow):
+For the relay server (verification only), utterd, and linux-test-client (browser-based flow):
 
 1. Go to **"APIs & Services"** → **"Credentials"**
 2. Click **"Create Credentials"** → **"OAuth client ID"**
@@ -68,7 +68,7 @@ For the relay server (verification only) and linux-test-client (browser-based fl
 4. Name: `Utter Web Client`
 5. Add **Authorized redirect URIs**:
    - `http://localhost:3000/oauth/callback`
-   - *(This is for linux-test-client local callback)*
+   - *(This is for utterd and linux-test-client local callback)*
 6. Click **"Create"**
 7. Copy **Client ID** and **Client Secret**
 
@@ -89,28 +89,20 @@ GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-client-secret
 ```
 
-### 3.2. utterd (CLI Application)
-
-For utterd (device authorization flow):
-
-1. Go to **"APIs & Services"** → **"Credentials"**
-2. Click **"Create Credentials"** → **"OAuth client ID"**
-3. Select **"TVs and Limited Input devices"**
-   - *(This type supports device authorization flow)*
-4. Name: `Utter CLI Client`
-5. Click **"Create"**
-6. Copy **Client ID**
-
 **Configure utterd:**
 ```bash
 cd utterd
-# Run utterd with CLIENT_ID environment variable:
-GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com cargo run
-# Or export it in your shell profile:
+# Run utterd with environment variables:
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com \
+GOOGLE_CLIENT_SECRET=your-client-secret \
+cargo run
+
+# Or export in your shell profile:
 export GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+export GOOGLE_CLIENT_SECRET=your-client-secret
 ```
 
-### 3.3. Android App
+### 3.2. Android App
 
 For Android app (Google Play Services):
 
@@ -179,12 +171,17 @@ pnpm start
 **2. Test utterd:**
 ```bash
 cd utterd
-GOOGLE_CLIENT_ID=your-cli-client-id.apps.googleusercontent.com cargo run
+GOOGLE_CLIENT_ID=your-web-client-id.apps.googleusercontent.com \
+GOOGLE_CLIENT_SECRET=your-client-secret \
+cargo run
 
 # You should see:
 # 📱 Sign in with Google:
-#    Visit: https://www.google.com/device
-#    Enter code: ABCD-EFGH
+#    Visit: https://accounts.google.com/o/oauth2/v2/auth?...
+#
+# Waiting for authorization...
+#
+# (Visit the URL in your browser, sign in, and utterd will continue)
 ```
 
 **3. Test linux-test-client:**

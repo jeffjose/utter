@@ -2,11 +2,13 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use tiny_http::{Response, Server};
 
-const DEVICE_CODE_URL: &str = "https://oauth2.googleapis.com/device/code";
+const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
+const REDIRECT_URI: &str = "http://localhost:3000/oauth/callback";
 const SCOPES: &str = "openid email profile";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -18,26 +20,11 @@ pub struct OAuthTokens {
 }
 
 #[derive(Debug, Deserialize)]
-struct DeviceCodeResponse {
-    device_code: String,
-    user_code: String,
-    verification_url: String,
-    expires_in: u64,
-    interval: u64,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum TokenResponse {
-    Success {
-        id_token: String,
-        access_token: String,
-        refresh_token: Option<String>,
-        expires_in: i64,
-    },
-    Error {
-        error: String,
-    },
+struct TokenResponse {
+    id_token: String,
+    access_token: String,
+    refresh_token: Option<String>,
+    expires_in: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -49,11 +36,12 @@ struct RefreshTokenResponse {
 
 pub struct OAuthManager {
     client_id: String,
+    client_secret: String,
     token_path: PathBuf,
 }
 
 impl OAuthManager {
-    pub fn new(client_id: String) -> Result<Self, String> {
+    pub fn new(client_id: String, client_secret: String) -> Result<Self, String> {
         let config_dir = dirs::config_dir()
             .ok_or("Cannot determine config directory")?
             .join("utterd");
@@ -67,6 +55,7 @@ impl OAuthManager {
 
         Ok(Self {
             client_id,
+            client_secret,
             token_path,
         })
     }
@@ -104,96 +93,118 @@ impl OAuthManager {
 
         // Perform new OAuth flow
         println!();
-        let tokens = self.device_auth_flow()?;
+        let tokens = self.browser_auth_flow()?;
         self.save_tokens(&tokens)?;
 
         Ok(tokens)
     }
 
-    fn device_auth_flow(&self) -> Result<OAuthTokens, String> {
-        let client = reqwest::blocking::Client::new();
+    fn browser_auth_flow(&self) -> Result<OAuthTokens, String> {
+        let (tx, rx) = mpsc::channel();
 
-        // Request device code
-        let params = [
-            ("client_id", self.client_id.as_str()),
-            ("scope", SCOPES),
-        ];
+        // Start local HTTP server
+        let server = Server::http("127.0.0.1:3000")
+            .map_err(|e| format!("Failed to start local server: {}", e))?;
 
-        let device_response = client
-            .post(DEVICE_CODE_URL)
-            .form(&params)
-            .send()
-            .map_err(|e| format!("Device code request failed: {}", e))?
-            .json::<DeviceCodeResponse>()
-            .map_err(|e| format!("Failed to parse device code response: {}", e))?;
+        // Generate authorization URL
+        let auth_url = format!(
+            "{}?client_id={}&redirect_uri={}&response_type=code&scope={}&access_type=offline&prompt=consent",
+            AUTH_URL,
+            urlencoding::encode(&self.client_id),
+            urlencoding::encode(REDIRECT_URI),
+            urlencoding::encode(SCOPES)
+        );
 
-        // Display instructions to user
         println!("📱 Sign in with Google:");
         println!();
-        println!("   Visit: \x1b[36m{}\x1b[0m", device_response.verification_url);
-        println!();
-        println!("   Enter code: \x1b[1m\x1b[33m{}\x1b[0m", device_response.user_code);
+        println!("   Visit: \x1b[36m{}\x1b[0m", auth_url);
         println!();
         println!("Waiting for authorization...");
         println!();
 
-        // Poll for token
-        let poll_interval = Duration::from_secs(device_response.interval);
-        let max_attempts = (device_response.expires_in / device_response.interval) + 1;
+        // Handle callback in separate thread
+        thread::spawn(move || {
+            for request in server.incoming_requests() {
+                let url = request.url().to_string();
 
-        for _ in 0..max_attempts {
-            thread::sleep(poll_interval);
+                if url.starts_with("/oauth/callback") {
+                    // Parse query string
+                    if let Some(query) = url.split('?').nth(1) {
+                        let params: Vec<(&str, &str)> = query
+                            .split('&')
+                            .filter_map(|pair| {
+                                let parts: Vec<&str> = pair.split('=').collect();
+                                if parts.len() == 2 {
+                                    Some((parts[0], parts[1]))
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
 
-            let token_params = [
-                ("client_id", self.client_id.as_str()),
-                ("device_code", device_response.device_code.as_str()),
-                ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
-            ];
+                        let code = params.iter().find(|(k, _)| *k == "code").map(|(_, v)| *v);
 
-            let response = client
-                .post(TOKEN_URL)
-                .form(&token_params)
-                .send()
-                .map_err(|e| format!("Token request failed: {}", e))?;
+                        if let Some(code) = code {
+                            // Send success response to browser
+                            let html = r#"
+                                <html>
+                                    <body style="font-family: sans-serif; text-align: center; padding: 50px;">
+                                        <h1>✓ Authentication Successful!</h1>
+                                        <p>You can close this window and return to the terminal.</p>
+                                    </body>
+                                </html>
+                            "#;
+                            let response = Response::from_string(html)
+                                .with_header(tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/html"[..]).unwrap());
+                            let _ = request.respond(response);
 
-            let token_response = response
-                .json::<TokenResponse>()
-                .map_err(|e| format!("Failed to parse token response: {}", e))?;
+                            // Send code to main thread
+                            let _ = tx.send(Ok(code.to_string()));
+                        } else {
+                            let html = "<h1>Error: No authorization code received</h1>";
+                            let response = Response::from_string(html)
+                                .with_header(tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/html"[..]).unwrap());
+                            let _ = request.respond(response);
 
-            match token_response {
-                TokenResponse::Success {
-                    id_token,
-                    access_token,
-                    refresh_token,
-                    expires_in,
-                } => {
-                    let expires_at = Utc::now() + chrono::Duration::seconds(expires_in);
-
-                    return Ok(OAuthTokens {
-                        id_token,
-                        access_token,
-                        refresh_token,
-                        expires_at,
-                    });
-                }
-                TokenResponse::Error { error } => {
-                    if error == "authorization_pending" {
-                        // Keep waiting
-                        continue;
-                    } else if error == "slow_down" {
-                        // Increase interval
-                        thread::sleep(Duration::from_secs(5));
-                        continue;
-                    } else if error == "expired_token" {
-                        return Err("Device code expired. Please try again.".to_string());
-                    } else {
-                        return Err(format!("OAuth error: {}", error));
+                            let _ = tx.send(Err("No authorization code received".to_string()));
+                        }
+                        break;
                     }
                 }
             }
-        }
+        });
 
-        Err("OAuth timed out. Please try again.".to_string())
+        // Wait for callback with timeout
+        let code = rx
+            .recv_timeout(std::time::Duration::from_secs(300))
+            .map_err(|_| "OAuth flow timed out".to_string())??;
+
+        // Exchange code for tokens
+        let client = reqwest::blocking::Client::new();
+        let params = [
+            ("client_id", self.client_id.as_str()),
+            ("client_secret", self.client_secret.as_str()),
+            ("code", code.as_str()),
+            ("grant_type", "authorization_code"),
+            ("redirect_uri", REDIRECT_URI),
+        ];
+
+        let response = client
+            .post(TOKEN_URL)
+            .form(&params)
+            .send()
+            .map_err(|e| format!("Token exchange failed: {}", e))?
+            .json::<TokenResponse>()
+            .map_err(|e| format!("Failed to parse token response: {}", e))?;
+
+        let expires_at = Utc::now() + chrono::Duration::seconds(response.expires_in);
+
+        Ok(OAuthTokens {
+            id_token: response.id_token,
+            access_token: response.access_token,
+            refresh_token: response.refresh_token,
+            expires_at,
+        })
     }
 
     fn refresh_token(&self, refresh_token: &str) -> Result<OAuthTokens, String> {
@@ -201,6 +212,7 @@ impl OAuthManager {
 
         let params = [
             ("client_id", self.client_id.as_str()),
+            ("client_secret", self.client_secret.as_str()),
             ("refresh_token", refresh_token),
             ("grant_type", "refresh_token"),
         ];
