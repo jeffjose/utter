@@ -237,6 +237,8 @@ async function handleRegister(client: Client, message: any) {
 function handleGetDevices(client: Client) {
   const devices: Device[] = [];
 
+  console.log(`${colors.dim}[${client.id}]${colors.reset} ${colors.cyan}→${colors.reset} get_devices ${colors.dim}(type=${client.type}, user=${client.userId})${colors.reset}`);
+
   // Get devices for this user
   // Controllers only see targets (devices they can send commands to)
   clients.forEach((c) => {
@@ -257,6 +259,8 @@ function handleGetDevices(client: Client) {
       });
     }
   });
+
+  console.log(`${colors.dim}[${client.id}]${colors.reset} ${colors.cyan}←${colors.reset} Sending ${devices.length} device(s): ${devices.map(d => `${d.deviceName} (${d.deviceType})`).join(', ')}`);
 
   client.ws.send(JSON.stringify({
     type: 'devices',

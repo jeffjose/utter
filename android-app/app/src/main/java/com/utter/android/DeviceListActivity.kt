@@ -2,6 +2,7 @@ package com.utter.android
 
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.widget.ArrayAdapter
 import android.widget.ListView
 import android.widget.TextView
@@ -12,6 +13,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class DeviceListActivity : AppCompatActivity() {
+
+    companion object {
+        private const val TAG = "DeviceListActivity"
+    }
 
     private lateinit var statusText: TextView
     private lateinit var deviceListView: ListView
@@ -77,8 +82,13 @@ class DeviceListActivity : AppCompatActivity() {
 
     private fun fetchDevices() {
         statusText.text = "Loading devices..."
+        Log.d(TAG, "fetchDevices() called")
+        Log.d(TAG, "WebSocket client null? ${WebSocketManager.client == null}")
+        Log.d(TAG, "WebSocket connected? ${WebSocketManager.client?.isConnected()}")
+
         CoroutineScope(Dispatchers.IO).launch {
-            WebSocketManager.client?.requestDeviceList()
+            val success = WebSocketManager.client?.requestDeviceList()
+            Log.d(TAG, "requestDeviceList() returned: $success")
         }
     }
 

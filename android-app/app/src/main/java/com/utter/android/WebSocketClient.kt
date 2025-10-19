@@ -114,8 +114,8 @@ class WebSocketClient(
                                     status = deviceObj.getString("status"),
                                     publicKey = deviceObj.optString("publicKey", null)
                                 )
-                                // Only include Linux devices
-                                if (device.deviceType == "linux") {
+                                // Only include target devices (devices we can send commands to)
+                                if (device.deviceType == "target") {
                                     deviceList.add(device)
                                 }
                             }
