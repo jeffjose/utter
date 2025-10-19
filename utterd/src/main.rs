@@ -69,9 +69,9 @@ struct Args {
     #[arg(long, env = "UTTER_RELAY_SERVER", default_value = "ws://localhost:8080")]
     server: String,
 
-    /// Use ydotool instead of xdotool (for Wayland)
-    #[arg(long)]
-    ydotool: bool,
+    /// Tool for simulating keyboard input (xdotool or ydotool)
+    #[arg(long, default_value = "xdotool")]
+    tool: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -137,7 +137,7 @@ impl AppState {
 
 struct UtterClient {
     server_url: String,
-    use_ydotool: bool,
+    tool: String,
     state: Arc<Mutex<AppState>>,
     key_manager: Option<Arc<KeyManager>>,
     message_encryption: Option<Arc<MessageEncryption>>,
@@ -145,7 +145,7 @@ struct UtterClient {
 }
 
 impl UtterClient {
-    fn new(server_url: String, use_ydotool: bool) -> Self {
+    fn new(server_url: String, tool: String) -> Self {
         let state = Arc::new(Mutex::new(AppState::new()));
 
         // Initialize crypto
@@ -179,7 +179,7 @@ impl UtterClient {
 
         Self {
             server_url,
-            use_ydotool,
+            tool,
             state,
             key_manager,
             message_encryption,
@@ -196,12 +196,11 @@ impl UtterClient {
     }
 
     fn check_dependencies(&self) -> bool {
-        let tool = if self.use_ydotool { "ydotool" } else { "xdotool" };
-        Self::check_tool_available(tool)
+        Self::check_tool_available(&self.tool)
     }
 
     fn simulate_typing(&self, text: &str) -> Result<(), String> {
-        let result = if self.use_ydotool {
+        let result = if self.tool == "ydotool" {
             Command::new("ydotool")
                 .arg("type")
                 .arg(text)
@@ -458,11 +457,10 @@ impl UtterClient {
 
     async fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if !self.check_dependencies() {
-            let tool = if self.use_ydotool { "ydotool" } else { "xdotool" };
-            eprintln!("\n{}✗ {} not found{}", colors::RED, tool, colors::RESET);
-            eprintln!("\n{}Please install {}{}", colors::YELLOW, tool, colors::RESET);
+            eprintln!("\n{}✗ {} not found{}", colors::RED, self.tool, colors::RESET);
+            eprintln!("\n{}Please install {}{}", colors::YELLOW, self.tool, colors::RESET);
             eprintln!("\n{}Install command:{}", colors::DIM, colors::RESET);
-            eprintln!("  {}sudo apt install {}{}", colors::CYAN, tool, colors::RESET);
+            eprintln!("  {}sudo apt install {}{}", colors::CYAN, self.tool, colors::RESET);
             return Ok(());
         }
 
@@ -510,7 +508,7 @@ impl Clone for UtterClient {
     fn clone(&self) -> Self {
         Self {
             server_url: self.server_url.clone(),
-            use_ydotool: self.use_ydotool,
+            tool: self.tool.clone(),
             state: self.state.clone(),
             key_manager: self.key_manager.clone(),
             message_encryption: self.message_encryption.clone(),
@@ -522,6 +520,14 @@ impl Clone for UtterClient {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let mut client = UtterClient::new(args.server, args.ydotool);
+
+    // Validate tool argument
+    if args.tool != "xdotool" && args.tool != "ydotool" {
+        eprintln!("{}✗ Invalid tool: {}{}", colors::RED, args.tool, colors::RESET);
+        eprintln!("{}Valid options: xdotool, ydotool{}", colors::YELLOW, colors::RESET);
+        std::process::exit(1);
+    }
+
+    let mut client = UtterClient::new(args.server, args.tool);
     client.run().await
 }
