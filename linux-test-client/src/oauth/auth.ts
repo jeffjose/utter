@@ -53,7 +53,6 @@ export class OAuthManager {
           return tokens;
         } else if (tokens.refreshToken) {
           // Try to refresh
-          console.log('⟳ Refreshing OAuth token...');
           try {
             const newTokens = await this.refreshToken(tokens.refreshToken);
             this.saveTokens(newTokens);
@@ -200,8 +199,6 @@ export class OAuthManager {
     if (process.platform !== 'win32') {
       fs.chmodSync(this.tokenPath, 0o600);
     }
-
-    console.log('✓ OAuth tokens saved');
   }
 
   /**
