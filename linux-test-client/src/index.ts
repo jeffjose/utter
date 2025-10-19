@@ -155,7 +155,7 @@ class TestClient {
     this.reconnectAttempts++;
     const delay = 5000; // 5 seconds constant
 
-    process.stdout.write(`\r\x1b[K${colors.red}✗ Disconnected${colors.reset} ${colors.gray}— Reconnecting in ${delay / 1000}s...${colors.reset}`);
+    process.stdout.write(`\r${colors.yellow}Reconnecting in ${delay / 1000}s...${colors.reset}`);
 
     setTimeout(() => {
       this.connect().catch(() => {
