@@ -4,17 +4,62 @@ import android.util.Log
 import com.utter.android.crypto.CryptoManager
 import com.utter.android.crypto.EncryptedMessage
 import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 class WebSocketClient(
     private val serverUrl: String,
     private val cryptoManager: CryptoManager? = null,
-    private val idToken: String? = null
+    private var jwt: String? = null
 ) {
 
     companion object {
         private const val TAG = "UtterWebSocket"
+
+        /**
+         * Exchange OAuth ID token for JWT
+         * @param serverUrl WebSocket server URL (will be converted to HTTP)
+         * @param idToken OAuth ID token from Google Sign-In
+         * @return JWT token
+         */
+        suspend fun exchangeForJWT(serverUrl: String, idToken: String): String {
+            // Convert WebSocket URL to HTTP URL for /auth endpoint
+            val httpUrl = serverUrl.replace("^wss?://".toRegex(), "http://")
+            val authUrl = "$httpUrl/auth"
+
+            Log.d(TAG, "Exchanging OAuth token for JWT at: $authUrl")
+
+            val json = JSONObject().apply {
+                put("token", idToken)
+            }
+
+            val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
+            val requestBody = json.toString().toRequestBody(mediaType)
+
+            val request = Request.Builder()
+                .url(authUrl)
+                .post(requestBody)
+                .build()
+
+            val client = OkHttpClient()
+            val response = client.newCall(request).execute()
+
+            if (!response.isSuccessful) {
+                val errorBody = response.body?.string() ?: "Unknown error"
+                throw Exception("JWT exchange failed: ${response.code} - $errorBody")
+            }
+
+            val responseBody = response.body?.string()
+                ?: throw Exception("Empty response from /auth endpoint")
+
+            val responseJson = JSONObject(responseBody)
+            val jwt = responseJson.getString("jwt")
+
+            Log.d(TAG, "Successfully obtained JWT")
+            return jwt
+        }
     }
 
     interface ConnectionListener {
@@ -102,10 +147,10 @@ class WebSocketClient(
                                     Log.d(TAG, "Including public key in registration")
                                 }
 
-                                // Include OAuth token if available
-                                idToken?.let {
-                                    put("token", it)
-                                    Log.d(TAG, "Including OAuth token in registration")
+                                // Include JWT if available
+                                jwt?.let {
+                                    put("jwt", it)
+                                    Log.d(TAG, "Including JWT in registration")
                                 }
                             }
                             webSocket.send(registerMsg.toString())

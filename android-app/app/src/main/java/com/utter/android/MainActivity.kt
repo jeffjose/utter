@@ -95,16 +95,42 @@ class MainActivity : AppCompatActivity() {
             Log.d(TAG, "Crypto initialized. Public key: ${publicKey?.take(32)}...")
         }
 
-        // Get OAuth ID token
-        val idToken = authManager.getIdToken()
-        if (idToken != null) {
-            Log.d(TAG, "Using OAuth ID token")
-        } else {
-            Log.w(TAG, "No OAuth token available - using test mode")
-        }
+        // Get fresh OAuth ID token and exchange for JWT
+        updateStatus("Authenticating...", false)
 
+        // Exchange OAuth token for JWT in background
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // Get fresh ID token via silent sign-in
+                val idToken = authManager.getIdTokenAsync()
+
+                if (idToken != null) {
+                    Log.d(TAG, "Fresh OAuth ID token obtained, exchanging for JWT...")
+                    val jwt = WebSocketClient.exchangeForJWT(serverUrl, idToken)
+                    Log.d(TAG, "JWT obtained successfully")
+
+                    // Now connect with JWT
+                    connectWithJWT(serverUrl, jwt)
+                } else {
+                    Log.w(TAG, "No OAuth token available - connecting without JWT")
+                    runOnUiThread {
+                        updateStatus("Not signed in. Please sign in first.", false)
+                        connectButton.isEnabled = true
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to authenticate: ${e.message}", e)
+                runOnUiThread {
+                    updateStatus("Authentication failed: ${e.message}", false)
+                    connectButton.isEnabled = true
+                }
+            }
+        }
+    }
+
+    private fun connectWithJWT(serverUrl: String, jwt: String?) {
         WebSocketManager.serverUrl = serverUrl
-        WebSocketManager.client = WebSocketClient(serverUrl, WebSocketManager.cryptoManager, idToken)
+        WebSocketManager.client = WebSocketClient(serverUrl, WebSocketManager.cryptoManager, jwt)
 
         WebSocketManager.client?.setListener(object : WebSocketClient.ConnectionListener {
             override fun onConnected() {

@@ -10,6 +10,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.tasks.Task
+import kotlinx.coroutines.tasks.await
 
 class GoogleAuthManager(private val context: Context, private val clientId: String) {
 
@@ -39,21 +40,35 @@ class GoogleAuthManager(private val context: Context, private val clientId: Stri
     }
 
     /**
-     * Get ID token from signed-in account or cached token
+     * Get ID token from signed-in account (always gets fresh token)
+     * Note: This returns the cached account's token, which may be stale.
+     * Use getIdTokenAsync() for a fresh token.
      */
     fun getIdToken(): String? {
         // Try to get token from current account
         val account = getSignedInAccount()
-        if (account != null) {
-            val token = account.idToken
-            if (token != null) {
-                saveIdToken(token)
-                return token
-            }
-        }
+        return account?.idToken
+    }
 
-        // Fall back to cached token
-        return getCachedIdToken()
+    /**
+     * Get a fresh ID token by performing silent sign-in
+     * This should be called from a coroutine/background thread
+     */
+    suspend fun getIdTokenAsync(): String? {
+        return try {
+            // Use silentSignIn to get a fresh token
+            val account = googleSignInClient.silentSignIn().await()
+            val token = account?.idToken
+            if (token != null) {
+                Log.d(TAG, "Fresh ID token obtained via silent sign-in")
+                saveIdToken(token)
+            }
+            token
+        } catch (e: Exception) {
+            Log.e(TAG, "Silent sign-in failed: ${e.message}", e)
+            // Fall back to last known account
+            getSignedInAccount()?.idToken
+        }
     }
 
     /**

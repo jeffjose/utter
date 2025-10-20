@@ -1,14 +1,13 @@
+// IMPORTANT: Load environment variables FIRST before any other imports
+import './config';
+
 import { WebSocketServer, WebSocket } from 'ws';
-import * as dotenv from 'dotenv';
 import * as os from 'os';
 import * as path from 'path';
 import * as http from 'http';
 import express from 'express';
 import { verifyGoogleToken } from './auth';
 import { signJWT, verifyJWT, refreshJWT, getExpirationSeconds } from './jwt';
-
-// Load environment from root .env file
-dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 8080;
 const MAX_MESSAGE_LENGTH = process.env.MAX_MESSAGE_LENGTH ? parseInt(process.env.MAX_MESSAGE_LENGTH) : 5000;
@@ -84,8 +83,6 @@ app.post('/auth', async (req, res) => {
     const jwt = signJWT(user.email);
     const expiresIn = getExpirationSeconds();
 
-    console.log(`${colors.green}✓${colors.reset} JWT issued for ${colors.bright}${user.email}${colors.reset}`);
-
     res.json({
       jwt,
       expiresIn,
@@ -124,8 +121,6 @@ app.post('/auth/refresh', async (req, res) => {
 
     // Decode to get userId for response
     const payload = require('jsonwebtoken').decode(newJwt) as any;
-
-    console.log(`${colors.green}↻${colors.reset} JWT refreshed for ${colors.bright}${payload.userId}${colors.reset}`);
 
     res.json({
       jwt: newJwt,
@@ -200,8 +195,6 @@ httpServer.listen(PORT, () => {
   console.log(`  Emulator: ${colors.yellow}ws://10.0.2.2:${PORT}${colors.reset}`);
   console.log(`  Physical: ${colors.gray}Use network address above${colors.reset}`);
   console.log('');
-  console.log(`${colors.dim}Authentication:${colors.reset}`);
-  console.log(`  ${colors.red}●${colors.reset} JWT ${colors.bright}REQUIRED${colors.reset}`);
   console.log(`${colors.gray}${'─'.repeat(60)}${colors.reset}`);
   console.log('');
 });
@@ -289,7 +282,6 @@ function handleRegister(client: Client, message: any) {
   try {
     const payload = verifyJWT(message.jwt);
     authenticatedUserId = payload.userId;
-    console.log(`${colors.dim}[${client.id}]${colors.reset} ${colors.green}✓${colors.reset} JWT verified for ${colors.bright}${authenticatedUserId}${colors.reset}`);
   } catch (error: any) {
     console.error(`${colors.dim}[${client.id}]${colors.reset} ${colors.red}✗${colors.reset} JWT verification failed:`, error.message);
     client.ws.send(JSON.stringify({
@@ -332,9 +324,8 @@ function handleRegister(client: Client, message: any) {
 
   const typeColor = client.type === 'target' ? colors.blue : client.type === 'android' ? colors.magenta : client.type === 'controller' ? colors.cyan : colors.gray;
 
-  // Build metadata string
+  // Build metadata string (exclude userId from display)
   const metadata = [];
-  if (client.userId) metadata.push(client.userId);
   if (client.version) metadata.push(client.version);
   if (client.platform) metadata.push(client.platform);
   if (client.arch) metadata.push(client.arch);
