@@ -4,6 +4,10 @@
 
 set -e
 
+# Export JAVA_HOME from mise to ensure Gradle uses the correct Java version
+export JAVA_HOME=$(mise where java)
+export PATH="$JAVA_HOME/bin:$PATH"
+
 echo "Building Utter Mobile App (Expo)..."
 echo "Using Java version:"
 mise exec -- java -version 2>&1 | head -1
