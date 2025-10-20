@@ -221,7 +221,6 @@ class TestClient {
       try {
         // Exchange Google OAuth token for JWT
         this.jwt = await this.exchangeForJWT(tokens.idToken);
-        console.log(`${colors.green}✓ JWT obtained${colors.reset}\n`);
       } catch (error) {
         console.log(`${colors.red}✗ Failed to obtain JWT: ${error instanceof Error ? error.message : String(error)}${colors.reset}`);
         console.log(`${colors.yellow}⚠ Continuing without JWT. Server may reject connection.${colors.reset}\n`);
