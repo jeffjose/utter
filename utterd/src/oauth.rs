@@ -83,7 +83,6 @@ impl OAuthManager {
                         return Ok(tokens);
                     } else if let Some(ref refresh_token) = tokens.refresh_token {
                         // Try to refresh
-                        println!("⟳ Refreshing OAuth token...");
                         match self.refresh_token(refresh_token) {
                             Ok(new_tokens) => {
                                 self.save_tokens(&new_tokens)?;
@@ -280,8 +279,6 @@ impl OAuthManager {
             fs::set_permissions(&self.token_path, fs::Permissions::from_mode(0o600))
                 .map_err(|e| format!("Failed to set token file permissions: {}", e))?;
         }
-
-        println!("✓ OAuth tokens saved");
 
         Ok(())
     }
