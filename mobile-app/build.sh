@@ -10,7 +10,7 @@ mise exec -- java -version 2>&1 | head -1
 
 echo ""
 echo "Using Node version:"
-mise exec -- node -version
+mise exec -- node --version
 
 echo ""
 echo "Building Android app..."
