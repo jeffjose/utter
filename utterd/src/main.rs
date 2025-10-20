@@ -290,7 +290,8 @@ impl UtterClient {
                 })
             }
             WsMessage::Registered => {
-                print!("{}●{} Connected\n\n", colors::GREEN, colors::RESET);
+                // Print connection status with placeholder for last message
+                print!("{}●{} Connected\n\nLast: -\n↓\n", colors::GREEN, colors::RESET);
                 use std::io::Write;
                 std::io::stdout().flush().unwrap();
                 None
@@ -477,15 +478,24 @@ impl UtterClient {
                             }
                         }
                         Some(Ok(Message::Close(_))) => {
-                            println!("\r\x1b[K{}✗ Connection closed{}", colors::YELLOW, colors::RESET);
+                            // Update status to show disconnected (move up 4 lines to status line)
+                            print!("\x1b[4A\r\x1b[K{}●{} Disconnected\n\n\n\n", colors::RED, colors::RESET);
+                            use std::io::Write;
+                            std::io::stdout().flush().unwrap();
                             break;
                         }
                         Some(Err(e)) => {
-                            println!("\r\x1b[K{}✗ Connection lost: {}{}", colors::RED, e, colors::RESET);
+                            // Update status to show disconnected with error
+                            print!("\x1b[4A\r\x1b[K{}●{} Disconnected ({})\n\n\n\n", colors::RED, colors::RESET, e);
+                            use std::io::Write;
+                            std::io::stdout().flush().unwrap();
                             break;
                         }
                         None => {
-                            println!("\r\x1b[K{}✗ Connection closed{}", colors::YELLOW, colors::RESET);
+                            // Update status to show disconnected
+                            print!("\x1b[4A\r\x1b[K{}●{} Disconnected\n\n\n\n", colors::RED, colors::RESET);
+                            use std::io::Write;
+                            std::io::stdout().flush().unwrap();
                             break;
                         }
                         _ => {}
@@ -531,10 +541,6 @@ impl UtterClient {
             })?;
 
         self.jwt = Some(auth_response.jwt);
-
-        println!("{}✓{} JWT obtained for {}{}{}",
-            colors::GREEN, colors::RESET,
-            colors::BRIGHT, auth_response.user_id, colors::RESET);
 
         // Print startup banner
         let hostname = get_hostname();
@@ -585,6 +591,8 @@ impl UtterClient {
             std::io::stdout().flush().unwrap();
             sleep(Duration::from_secs(5)).await;
             print!("\r\x1b[K"); // Clear the line
+            // Move cursor back up to status line so Registered will overwrite it
+            print!("\x1b[4A");
             std::io::stdout().flush().unwrap();
         }
     }
