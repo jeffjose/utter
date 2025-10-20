@@ -409,6 +409,65 @@ useEffect(() => {
 
 # Technology Stack
 
+## Development Environment
+
+**Toolchain Management:**
+- [`mise`](https://mise.jdx.dev/) - Polyglot runtime manager (Linux native)
+- Manages Node.js, pnpm, and other tool versions
+- Consistent tooling across all Utter projects
+
+**Package Manager:**
+- [`pnpm`](https://pnpm.io/) - Fast, disk space efficient package manager
+- Used throughout this document instead of `npm`
+- Consistent with `relay-server/` and `linux-test-client/`
+
+**Initial Setup:**
+```bash
+# Install mise (if not already installed)
+curl https://mise.run | sh
+echo 'eval "$(mise activate bash)"' >> ~/.bashrc  # or ~/.zshrc
+source ~/.bashrc
+
+# Install Node.js and pnpm via mise
+mise use -g node@20
+mise use -g pnpm@8
+
+# Verify installation
+node --version  # Should be v20.x.x
+pnpm --version  # Should be 8.x.x
+```
+
+**Project Configuration:**
+
+Create `.mise.toml` in `mobile-app/` directory:
+```toml
+[tools]
+node = "20"
+pnpm = "8"
+
+[env]
+# Optional: Set pnpm store location
+PNPM_HOME = "{{ env.HOME }}/.local/share/pnpm"
+```
+
+**Command Equivalents:**
+
+| npm | pnpm | Notes |
+|-----|------|-------|
+| `npm install` | `pnpm install` or `pnpm i` | Install dependencies |
+| `npm install <pkg>` | `pnpm add <pkg>` | Add package |
+| `npm install -D <pkg>` | `pnpm add -D <pkg>` | Add dev dependency |
+| `npm test` | `pnpm test` | Run tests |
+| `npx <cmd>` | `pnpm dlx <cmd>` | Execute package binary |
+| `npm run <script>` | `pnpm <script>` | Run package script |
+
+**Throughout this document:**
+- All commands use `pnpm` instead of `npm`
+- `npx expo` commands can optionally use `pnpm dlx expo`
+- mise ensures consistent Node.js and pnpm versions
+
+---
+
 ## Expo App Dependencies
 
 ### Core Framework
@@ -589,23 +648,354 @@ mobile-app/
 
 # Implementation Phases
 
-## Phase Overview
+⚠️ **IMPORTANT: IMPLEMENTATION ORDER GUIDE**
 
-| Phase | Component | Duration | Dependencies |
-|-------|-----------|----------|--------------|
-| **Phase 1** | Project setup & navigation | 1-2 days | None |
-| **Phase 2** | WebSocket client | 2-3 days | Phase 1 |
-| **Phase 3** | Authentication (Google OAuth) | 2-3 days | Phase 1 |
-| **Phase 4** | Crypto & E2E encryption | 3-5 days | Phase 2 |
-| **Phase 5** | Voice input integration | 2-3 days | Phase 2 |
-| **Phase 6** | UI/UX polish & testing | 3-4 days | All phases |
-| **Phase 7** | iOS testing & platform-specific fixes | 2-3 days | All phases |
+The phases in this document are being reordered. **Use this table as your implementation guide:**
 
-**Total Estimated Time:** 15-23 days (~3-4 weeks)
+| When Implementing | Use Section Named | Why |
+|-------------------|-------------------|-----|
+| **Phase 0** | Phase 0: Crypto Spike | ✅ Correct - already added |
+| **Phase 1** | Phase 1: Project Setup | ✅ Correct location |
+| **Phase 2** | OLD "Phase 3: Authentication" section below | ⚠️ Content hasn't moved yet |
+| **Phase 3** | OLD "Phase 2: WebSocket" section below | ⚠️ Content hasn't moved yet |
+| **Phase 4** | Create from "Phase 6" Device List portion | 📝 Extract device list UI |
+| **Phase 5** | Phase 5: Text Input | ✅ Mostly correct |
+| **Phase 6** | OLD "Phase 4: Crypto & E2E" section | ⚠️ Use crypto from Phase 0 |
+| **Phase 7** | Phase 6: UI/UX Polish | ⚠️ Renumber to 7 |
+| **Phase 8** | Phase 7: iOS Testing | ⚠️ Renumber to 8 |
+
+**🔑 KEY INSIGHT:** When you see "Phase 2" heading below, scroll down to find the **Authentication (OAuth)** content (currently mislabeled as "Phase 3"). Implement Auth first, then come back for WebSocket.
+
+**Critical Dependencies:**
+- ✅ Phase 0 (Crypto Spike) → Must complete FIRST (Go/No-Go decision)
+- ✅ Phase 2 (Auth) → Must come BEFORE Phase 3 (WebSocket)
+- ✅ Phase 3 (WebSocket) → Needs `AuthManager.getIdToken()` from Phase 2
+- ✅ Phase 6 (Encryption) → Uses crypto modules from Phase 0
+
+**Why This Matters:**
+The original document had WebSocket before Auth, which creates a circular dependency. WebSocket registration needs the OAuth token, so Auth must come first.
 
 ---
 
-## Phase 1: Project Setup & Navigation (1-2 days)
+## Phase Overview
+
+**IMPORTANT:** Phases are ordered to minimize risk and ensure logical dependencies.
+
+| Phase | Component | Duration | Dependencies | Risk Level |
+|-------|-----------|----------|--------------|------------|
+| **Phase 0** | Crypto spike (risk mitigation) | 2-3 days | None | 🔴 HIGH |
+| **Phase 1** | Project setup & navigation | 1 day | None | 🟢 LOW |
+| **Phase 2** | Authentication (Google OAuth) | 2-3 days | Phase 1 | 🟡 MEDIUM |
+| **Phase 3** | WebSocket client | 2-3 days | Phase 2 | 🟡 MEDIUM |
+| **Phase 4** | Device list UI | 1-2 days | Phase 3 | 🟢 LOW |
+| **Phase 5** | Text input & plain messages | 1-2 days | Phase 3 | 🟢 LOW |
+| **Phase 6** | Encryption integration | 2-3 days | Phase 0, Phase 5 | 🟡 MEDIUM |
+| **Phase 7** | UI/UX polish & testing | 2-3 days | All phases | 🟢 LOW |
+| **Phase 8** | iOS testing & platform fixes | 2-3 days | All phases | 🟡 MEDIUM |
+
+**Total Estimated Time:** 14-22 days (~3-4 weeks)
+
+**Critical Path:** Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 5 → Phase 6
+
+**Key Changes from Original Plan:**
+- ✅ Added Phase 0 (Crypto Spike) - Fail fast on highest risk
+- ✅ Moved Auth before WebSocket (correct dependency order)
+- ✅ Extracted Device List UI as separate phase (clearer deliverable)
+- ✅ Split Text Input from Encryption (incremental testing)
+- ✅ Each phase now has clear end-to-end test checkpoint
+
+---
+
+## Phase 0: Crypto Spike / Risk Mitigation (2-3 days)
+
+**⚠️ CRITICAL: This is a GO/NO-GO phase. Do NOT proceed to Phase 1 until crypto is validated.**
+
+### Why Phase 0 Exists
+
+E2E encryption is the **highest risk** component of this migration. If X25519 + AES-GCM doesn't work in Expo:
+- The entire Expo approach fails
+- Need to pivot to native apps (Kotlin + Swift)
+- Discovering this on Day 10+ wastes significant time
+
+**Phase 0 validates crypto feasibility before investing in the full app.**
+
+---
+
+### Goals
+
+- ✅ Validate X25519 ECDH key exchange works in Expo
+- ✅ Validate AES-256-GCM encryption/decryption works
+- ✅ Test interoperability with existing utterd (Rust) implementation
+- ✅ Determine technology choice (`expo-crypto` vs native module)
+- ✅ Create reusable `CryptoManager` module for Phase 6
+- ✅ **Make GO/NO-GO decision**
+
+---
+
+### Tasks
+
+#### 0.1 Create Standalone Crypto Test Project
+
+```bash
+# Create minimal Expo project for crypto testing
+npx create-expo-app crypto-spike --template blank-typescript
+cd crypto-spike
+```
+
+#### 0.2 Install Crypto Libraries
+
+```bash
+# Try expo-crypto first
+npx expo install expo-crypto
+
+# Try community libraries
+pnpm add crypto-js
+pnpm add -D @types/crypto-js
+
+# If needed: react-native-rsa-native for X25519
+pnpm add react-native-rsa-native
+```
+
+#### 0.3 Implement X25519 Key Generation
+
+**File: `CryptoTest.ts`**
+```typescript
+import * as Crypto from 'expo-crypto';
+
+// Option 1: Try expo-crypto
+async function generateX25519KeyPair_ExpoCrypto() {
+  try {
+    // Check if expo-crypto supports X25519
+    const privateKey = await Crypto.getRandomBytesAsync(32);
+    const publicKey = derivePublicKeyFromPrivate(privateKey); // If possible
+
+    console.log('✅ expo-crypto supports X25519');
+    return { privateKey, publicKey };
+  } catch (error) {
+    console.error('❌ expo-crypto does not support X25519:', error);
+    return null;
+  }
+}
+
+// Option 2: Try react-native-rsa-native or similar
+// Option 3: Write custom native module
+
+// Test all options
+export async function testKeyGeneration() {
+  const result = await generateX25519KeyPair_ExpoCrypto();
+
+  if (!result) {
+    console.log('⚠️ Need alternative approach for X25519');
+    // Try other libraries...
+  }
+
+  return result;
+}
+```
+
+#### 0.4 Implement ECDH Key Exchange
+
+```typescript
+// Perform Diffie-Hellman key exchange
+async function performECDH(
+  myPrivateKey: Uint8Array,
+  theirPublicKey: Uint8Array
+): Promise<Uint8Array> {
+  // This is the critical operation that may not be available in Expo
+  // May need native module
+
+  try {
+    const sharedSecret = /* ... */;
+    console.log('✅ ECDH works');
+    return sharedSecret;
+  } catch (error) {
+    console.error('❌ ECDH failed:', error);
+    throw error;
+  }
+}
+```
+
+#### 0.5 Implement AES-256-GCM Encryption
+
+```typescript
+import CryptoJS from 'crypto-js';
+
+async function encryptAES_GCM(
+  plaintext: string,
+  key: Uint8Array,
+  nonce: Uint8Array
+): Promise<Uint8Array> {
+  // Test if crypto-js or expo-crypto supports AES-GCM
+  try {
+    // Note: crypto-js doesn't have AES-GCM, may need alternative
+    const ciphertext = /* ... */;
+    console.log('✅ AES-GCM encryption works');
+    return ciphertext;
+  } catch (error) {
+    console.error('❌ AES-GCM encryption failed:', error);
+    throw error;
+  }
+}
+
+async function decryptAES_GCM(
+  ciphertext: Uint8Array,
+  key: Uint8Array,
+  nonce: Uint8Array
+): Promise<string> {
+  // Decrypt
+  try {
+    const plaintext = /* ... */;
+    console.log('✅ AES-GCM decryption works');
+    return plaintext;
+  } catch (error) {
+    console.error('❌ AES-GCM decryption failed:', error);
+    throw error;
+  }
+}
+```
+
+#### 0.6 Test Interoperability with Utterd
+
+**Critical Test:** Can mobile app encrypt, and utterd decrypt?
+
+```typescript
+// Test file: test-with-utterd.ts
+
+async function testCryptoRoundtrip() {
+  // 1. Generate keypair on mobile
+  const mobileKeys = await generateX25519KeyPair();
+  console.log('Mobile public key:', base64Encode(mobileKeys.publicKey));
+
+  // 2. Get utterd's public key (from relay server or hardcoded for test)
+  const utterdPublicKey = base64Decode('utterd_public_key_here');
+
+  // 3. Perform ECDH
+  const sharedSecret = await performECDH(mobileKeys.privateKey, utterdPublicKey);
+
+  // 4. Derive AES key
+  const aesKey = await deriveAESKey(sharedSecret);
+
+  // 5. Encrypt message
+  const plaintext = 'Hello from Expo';
+  const nonce = await Crypto.getRandomBytesAsync(12);
+  const ciphertext = await encryptAES_GCM(plaintext, aesKey, nonce);
+
+  // 6. Send to utterd via relay (or copy/paste for manual test)
+  console.log('Encrypted message:', {
+    ciphertext: base64Encode(ciphertext),
+    nonce: base64Encode(nonce),
+    ephemeralPublicKey: base64Encode(mobileKeys.publicKey)
+  });
+
+  // 7. Verify utterd can decrypt (check utterd logs)
+  console.log('✅ Check utterd logs to verify decryption');
+}
+```
+
+**Test Process:**
+1. Run crypto spike app
+2. Copy encrypted output
+3. Manually send to utterd via relay
+4. Check if utterd successfully decrypts and types message
+
+---
+
+### Decision Tree
+
+After completing tasks 0.1-0.6:
+
+#### ✅ **SUCCESS: expo-crypto works**
+```
+Decision: Proceed with Expo
+Next Step: Phase 1
+Technology: expo-crypto + crypto-js
+Effort: Use spike code in Phase 6
+```
+
+#### ⚠️ **PARTIAL: Need native module**
+```
+Decision: Proceed with Expo bare workflow
+Next Step: Phase 1, but plan for native module in Phase 6
+Technology: Custom native module for X25519
+Effort: +2-3 days in Phase 6
+```
+
+#### ❌ **FAILURE: Crypto doesn't work**
+```
+Decision: Pivot to native apps (Kotlin + Swift)
+Next Step: Abandon Expo, implement iOS in Swift
+Technology: Native crypto libraries (BouncyCastle, CryptoKit)
+Effort: 8-10 weeks total (back to original estimate)
+```
+
+---
+
+### Testing Phase 0
+
+```bash
+# 1. Run spike app on physical device
+cd crypto-spike
+npx expo start
+
+# 2. Test key generation
+# - Tap "Test Key Generation"
+# - Verify no errors
+# - Check logs for public/private keys
+
+# 3. Test encryption/decryption
+# - Tap "Test Encryption"
+# - Verify roundtrip works (encrypt → decrypt → same text)
+
+# 4. Test with utterd
+# - Start relay server and utterd
+# - Run crypto spike
+# - Tap "Send Encrypted to Utterd"
+# - Check utterd logs for decrypted message
+```
+
+**Success Criteria:**
+- ✅ X25519 keypair generation works
+- ✅ ECDH key exchange works
+- ✅ AES-256-GCM encryption/decryption works
+- ✅ Utterd successfully decrypts message from mobile
+- ✅ Mobile successfully decrypts message from utterd
+- ✅ Performance acceptable (<100ms for encrypt/decrypt)
+
+**Failure Criteria:**
+- ❌ X25519 not available in any library
+- ❌ AES-GCM not available in any library
+- ❌ Utterd cannot decrypt mobile messages
+- ❌ Encryption takes >500ms (too slow)
+
+---
+
+### Deliverables
+
+**If SUCCESS:**
+1. `CryptoManager.ts` - Reusable crypto module
+2. `KeyManager.ts` - Key generation and storage
+3. `MessageEncryption.ts` - Encrypt/decrypt functions
+4. Test results document
+5. **GO decision for Phase 1**
+
+**If FAILURE:**
+1. Document of findings
+2. **NO-GO decision for Expo**
+3. Alternative plan (native apps or different framework)
+
+---
+
+### Time Estimate
+
+- **Best case:** 2 days (expo-crypto works out of box)
+- **Likely case:** 3 days (need to try multiple libraries)
+- **Worst case:** 3 days + pivot decision
+
+**DO NOT proceed to Phase 1 until this phase is complete.**
+
+---
+
+## Phase 1: Project Setup & Navigation (1 day)
 
 ### Goals
 - Create Expo project with TypeScript
@@ -615,18 +1005,50 @@ mobile-app/
 
 ### Tasks
 
+#### 1.0 Setup Toolchain with mise
+
+**Prerequisites:** Ensure mise is installed (see Technology Stack section)
+
+```bash
+cd /home/jeffjose/scripts/utter
+
+# Verify mise is available
+mise --version
+
+# Ensure Node.js 20 and pnpm 8 are installed globally
+mise use -g node@20
+mise use -g pnpm@8
+
+# Verify
+node --version  # Should be v20.x.x
+pnpm --version  # Should be 8.x.x
+```
+
 #### 1.1 Initialize Expo Project
 ```bash
 cd /home/jeffjose/scripts/utter
 npx create-expo-app mobile-app --template expo-template-blank-typescript
 cd mobile-app
+
+# Create mise configuration for this project
+cat > .mise.toml << 'EOF'
+[tools]
+node = "20"
+pnpm = "8"
+EOF
+
+# Activate mise for this directory
+mise install
 ```
 
 #### 1.2 Install Core Dependencies
 ```bash
+# Use npx for expo-specific commands (or pnpm dlx expo)
 npx expo install @react-navigation/native @react-navigation/native-stack
 npx expo install react-native-screens react-native-safe-area-context
-npx expo install react-native-paper
+
+# Use pnpm for standard npm packages
+pnpm add react-native-paper
 ```
 
 #### 1.3 Create Navigation Structure
@@ -708,13 +1130,22 @@ npx expo start
 
 ---
 
-## Phase 2: WebSocket Client (2-3 days)
+## Phase 2: Authentication (Google OAuth) (2-3 days)
+
+**Prerequisites:** Phase 1 complete
 
 ### Goals
-- Implement WebSocket client matching Kotlin version
-- Connection management (connect, disconnect, reconnect)
-- Message sending and receiving
-- State management with Zustand
+- Implement Google OAuth using `expo-auth-session`
+- Store ID token securely in `expo-secure-store`
+- Auto-skip sign-in if already authenticated
+- Prepare token for WebSocket registration (Phase 3)
+
+### Why Phase 2 (Not Phase 3)
+
+Authentication must come **before** WebSocket because:
+- WebSocket registration requires OAuth token
+- Phase 3 (WebSocket) depends on `AuthManager.getIdToken()`
+- Correct dependency order: Auth → WebSocket → Device List
 
 ### Tasks
 
@@ -914,13 +1345,23 @@ npx expo start
 
 ---
 
-## Phase 3: Authentication (Google OAuth) (2-3 days)
+## Phase 3: WebSocket Client (2-3 days)
+
+**Prerequisites:** Phase 2 (Authentication) complete - need `AuthManager.getIdToken()`
 
 ### Goals
-- Implement Google OAuth using `expo-auth-session`
-- Store ID token securely
-- Auto-skip sign-in if already authenticated
-- Send token during WebSocket registration
+- Implement WebSocket client matching Kotlin version
+- Connection management (connect, disconnect, reconnect)
+- Message sending and receiving
+- Register with relay server using OAuth token from Phase 2
+- State management with Zustand
+
+### Why Phase 3 (After Auth)
+
+WebSocket comes **after** Authentication because:
+- Registration message requires OAuth token from `AuthManager`
+- Phase 2 creates `AuthManager.getIdToken()` method
+- Relay server needs verified token to accept registration
 
 ### Tasks
 
@@ -1117,8 +1558,8 @@ npx expo start
 #### 4.1 Install Dependencies
 ```bash
 npx expo install expo-crypto
-npm install react-native-rsa-native crypto-js
-npm install @types/crypto-js --save-dev
+pnpm add react-native-rsa-native crypto-js
+pnpm add -D @types/crypto-js
 ```
 
 #### 4.2 Research Crypto Implementation
@@ -1323,7 +1764,7 @@ Then implement native code:
 ### Testing Phase 4
 ```bash
 # 1. Unit tests for crypto functions
-npm test -- crypto
+pnpm test -- crypto
 
 # 2. Integration test with relay server
 # - Generate keypair on mobile app
@@ -1348,104 +1789,72 @@ npm test -- crypto
 
 ---
 
-## Phase 5: Voice Input Integration (2-3 days)
+## Phase 5: Text Input Integration (1-2 days)
+
+**Important:** This phase does **NOT** implement voice recognition in the app. We rely on Google Keyboard's (or iOS keyboard's) built-in voice input feature.
 
 ### Goals
-- Implement voice input using `@react-native-voice/voice`
-- Auto-send after 2 seconds of no typing
+- Auto-focus `TextInput` when screen opens
+- Keyboard opens automatically (with mic button available)
+- Implement 2-second auto-send countdown with visual progress
 - Send encrypted messages to target device
 
 ### Tasks
 
 #### 5.1 Install Dependencies
 ```bash
-npm install @react-native-voice/voice
-npx expo install expo-speech
+# No voice recognition libraries needed!
+# Using standard React Native components only
 ```
 
-#### 5.2 Create useVoiceInput Hook
+#### 5.2 Create TextInputScreen
 
-**File: `src/hooks/useVoiceInput.ts`**
+**File: `src/screens/TextInputScreen.tsx`**
 ```typescript
-import { useEffect, useState } from 'react';
-import Voice from '@react-native-voice/voice';
+import { useEffect, useRef, useState } from 'react';
+import { TextInput, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
-export function useVoiceInput() {
-  const [isListening, setIsListening] = useState(false);
-  const [transcript, setTranscript] = useState('');
-
-  useEffect(() => {
-    Voice.onSpeechResults = (e) => {
-      setTranscript(e.value?.[0] || '');
-    };
-
-    Voice.onSpeechStart = () => setIsListening(true);
-    Voice.onSpeechEnd = () => setIsListening(false);
-
-    return () => {
-      Voice.destroy().then(Voice.removeAllListeners);
-    };
-  }, []);
-
-  const startListening = async () => {
-    try {
-      await Voice.start('en-US');
-    } catch (error) {
-      console.error('Voice input error:', error);
-    }
-  };
-
-  const stopListening = async () => {
-    try {
-      await Voice.stop();
-    } catch (error) {
-      console.error('Voice stop error:', error);
-    }
-  };
-
-  return {
-    isListening,
-    transcript,
-    startListening,
-    stopListening,
-  };
-}
-```
-
-#### 5.3 Update VoiceInputScreen
-
-**File: `src/screens/VoiceInputScreen.tsx`**
-```typescript
-export default function VoiceInputScreen({ route }) {
+export default function TextInputScreen({ route, navigation }) {
   const { deviceId, deviceName, publicKey } = route.params;
   const [text, setText] = useState('');
-  const { isListening, transcript, startListening, stopListening } = useVoiceInput();
-  const { send } = useWebSocket();
-  const cryptoManager = useCryptoManager();
+  const [countdown, setCountdown] = useState(0); // 0 to 1 progress
+  const textInputRef = useRef<TextInput>(null);
 
-  // Auto-send after 2 seconds of no typing
+  // Auto-focus keyboard when screen opens
   useEffect(() => {
-    if (!text.trim()) return;
-
-    const timer = setTimeout(async () => {
-      await sendMessage(text);
-      setText('');
-    }, 2000);
-
+    const timer = setTimeout(() => {
+      textInputRef.current?.focus();
+    }, 100);
     return () => clearTimeout(timer);
+  }, []);
+
+  // Auto-send countdown (2 seconds)
+  useEffect(() => {
+    if (text.trim() === '') {
+      setCountdown(0);
+      return;
+    }
+
+    const startTime = Date.now();
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / 2000, 1); // 2 seconds
+      setCountdown(progress);
+
+      if (progress >= 1) {
+        clearInterval(interval);
+        sendMessage();
+      }
+    }, 50); // Update every 50ms for smooth animation
+
+    return () => clearInterval(interval);
   }, [text]);
 
-  // Update text when voice transcript changes
-  useEffect(() => {
-    if (transcript) {
-      setText(transcript);
-    }
-  }, [transcript]);
+  const sendMessage = async () => {
+    if (!text.trim()) return;
 
-  const sendMessage = async (message: string) => {
-    const encrypted = await cryptoManager.encrypt(message, publicKey);
-
-    send({
+    const encrypted = await encryptMessage(text, publicKey);
+    await sendToRelay({
       type: 'message',
       to: deviceId,
       encrypted: true,
@@ -1454,56 +1863,199 @@ export default function VoiceInputScreen({ route }) {
       ephemeralPublicKey: encrypted.ephemeralPublicKey,
       timestamp: Date.now(),
     });
+
+    setText('');
+    setCountdown(0);
+
+    // Show brief confirmation
+    showToast('✓ Sent');
+  };
+
+  const cancelSend = () => {
+    setText('');
+    setCountdown(0);
   };
 
   return (
     <View style={styles.container}>
-      <Text>Sending to: {deviceName}</Text>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Text style={styles.backButton}>← Back</Text>
+        </TouchableOpacity>
+        <Text style={styles.deviceName}>{deviceName}</Text>
+      </View>
 
+      {/* Main text input area */}
       <TextInput
-        placeholder="Type or speak a message..."
+        ref={textInputRef}
+        style={styles.textInput}
+        placeholder="Start typing or use keyboard mic..."
         value={text}
         onChangeText={setText}
         multiline
+        autoFocus={true}  // Auto-focus on mount
+        keyboardType="default"
+        returnKeyType="default"
       />
 
-      <Button
-        onPress={isListening ? stopListening : startListening}
-        title={isListening ? '🎤 Listening...' : '🎤 Tap to Speak'}
-      />
+      {/* Countdown progress bar */}
+      {countdown > 0 && (
+        <TouchableOpacity onPress={cancelSend} style={styles.countdownContainer}>
+          <Text style={styles.countdownText}>
+            Sending in {Math.ceil((1 - countdown) * 2)}s
+          </Text>
+          <View style={styles.progressBarContainer}>
+            <View
+              style={[
+                styles.progressBar,
+                { width: `${(1 - countdown) * 100}%` } // Depletes over time
+              ]}
+            />
+          </View>
+          <Text style={styles.cancelHint}>Tap to cancel</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  backButton: {
+    fontSize: 16,
+    color: '#6750A4',
+  },
+  deviceName: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginLeft: 16,
+  },
+  textInput: {
+    flex: 1,
+    fontSize: 16,
+    padding: 16,
+    textAlignVertical: 'top',
+  },
+  countdownContainer: {
+    alignItems: 'center',
+    paddingVertical: 16,
+  },
+  countdownText: {
+    fontSize: 14,
+    color: '#49454F',
+    marginBottom: 8,
+  },
+  progressBarContainer: {
+    width: '60%',
+    height: 4,
+    backgroundColor: '#E0E0E0',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: '#6750A4',
+  },
+  cancelHint: {
+    fontSize: 12,
+    color: '#9E9E9E',
+    marginTop: 8,
+  },
+});
 ```
+
+### How It Works
+
+**1. User Flow:**
+```
+Tap device in list
+    ↓
+Navigate to TextInputScreen
+    ↓
+Keyboard auto-opens (with system mic button)
+    ↓
+User types OR taps keyboard mic to dictate
+    ↓
+Text appears in TextInput
+    ↓
+2-second countdown starts
+    ↓
+Progress bar depletes
+    ↓
+Message sends automatically
+    ↓
+TextInput clears
+```
+
+**2. Voice Input (via Keyboard):**
+- Android: Google Keyboard has built-in mic button
+- iOS: iOS keyboard has built-in dictation
+- **No in-app voice recognition needed**
+- User taps keyboard mic → speaks → text appears
+- Same experience as any messaging app
+
+**3. Auto-Send Countdown:**
+- Starts when `text` changes and is non-empty
+- Progress updates every 50ms for smooth animation
+- Progress bar depletes from 100% → 0% over 2 seconds
+- Visual: `▓▓▓▓▓░░░` → `▓▓▓░░░░░` → `░░░░░░░░`
+- Tap anywhere to cancel
+- If user types more, countdown resets
 
 ### Testing Phase 5
 ```bash
-# 1. Run on physical device (voice input doesn't work in simulator)
-npx expo start
+# 1. Run on physical device
+npx expo start  # or: pnpm dlx expo start
 
-# 2. Test voice input
-# - Navigate to VoiceInputScreen
-# - Tap "Tap to Speak"
+# 2. Test text input
+# - Navigate to device list
+# - Tap a device
+# - Verify keyboard opens automatically
+# - Type text manually
+# - Verify countdown starts
+# - Verify auto-send after 2 seconds
+
+# 3. Test keyboard voice input
+# - Navigate to TextInputScreen
+# - Tap microphone button on keyboard (Google Keyboard or iOS keyboard)
 # - Speak: "Hello world"
 # - Verify text appears in input field
+# - Verify countdown starts
 # - Verify auto-send after 2 seconds
 
-# 3. Test typing
-# - Type text manually
-# - Verify auto-send after 2 seconds
+# 4. Test cancel
+# - Start typing
+# - Wait for countdown to start
+# - Tap the countdown area
+# - Verify text clears and countdown stops
 
-# 4. Test encrypted message delivery
+# 5. Test encrypted message delivery
 # - Ensure utterd is running
 # - Send message from mobile app
 # - Verify message types on Linux
 ```
 
 **Success Criteria:**
-- ✅ Voice input works on both platforms
-- ✅ Transcript appears in text field
-- ✅ Auto-send triggers after 2 seconds
+- ✅ Keyboard opens automatically when screen opens
+- ✅ User can type text normally
+- ✅ User can use keyboard's mic button to dictate (Google Keyboard or iOS keyboard)
+- ✅ Text appears in input field
+- ✅ Auto-send countdown starts after typing stops
+- ✅ Countdown bar animates smoothly (depletes over 2 seconds)
+- ✅ Tap to cancel countdown works
 - ✅ Messages encrypted before sending
 - ✅ Messages delivered to target device
+- ✅ TextInput clears after sending
 
 ---
 
@@ -1594,9 +2146,9 @@ try {
 
 Install:
 ```bash
-npm install nativewind
-npm install --save-dev tailwindcss
-npx tailwindcss init
+pnpm add nativewind
+pnpm add -D tailwindcss
+pnpm dlx tailwindcss init
 ```
 
 Use:
@@ -1639,7 +2191,7 @@ Use:
 ### Testing Phase 6
 ```bash
 # Run unit tests
-npm test
+pnpm test
 
 # Run on both platforms
 npx expo start
@@ -1966,8 +2518,11 @@ describe('Full User Flow', () => {
 ### Building
 
 ```bash
-# Install EAS CLI
-npm install -g eas-cli
+# Install EAS CLI globally via mise (recommended)
+mise use -g eas-cli@latest
+
+# Or install via npm globally (alternative)
+# npm install -g eas-cli
 
 # Login to Expo
 eas login
@@ -2073,6 +2628,674 @@ eas update --branch production --message "Fix voice input bug"
 
 ---
 
+# UI/UX Reference: Tailscale Android App
+
+## Source
+
+This section captures UI/UX patterns and design insights learned from studying the **Tailscale Android app** (`tailscale-android/` repository), which was redesigned in May 2024 using Jetpack Compose and Material Design 3.
+
+**Repository:** https://github.com/tailscale/tailscale-android
+
+**Key Files Analyzed:**
+- `android/src/main/java/com/tailscale/ipn/ui/view/MainView.kt` - Main screen with peer list
+- `android/src/main/java/com/tailscale/ipn/ui/view/IntroView.kt` - Onboarding screen
+- `android/src/main/java/com/tailscale/ipn/ui/view/PeerDetails.kt` - Device detail screen
+- `android/src/main/java/com/tailscale/ipn/ui/view/SearchView.kt` - Search functionality
+- `android/src/main/java/com/tailscale/ipn/ui/view/Avatar.kt` - User avatar component
+- `android/src/main/java/com/tailscale/ipn/MainActivity.kt` - Navigation structure
+
+---
+
+## Tailscale's Information Architecture
+
+### Screen Flow (Relevant to Utter)
+
+```
+IntroView (first launch)
+    ↓
+MainView (peer/node list) ← Main screen
+    ├─> PeerDetails (tap on peer)
+    ├─> SearchView (tap search bar)
+    ├─> SettingsView (tap avatar)
+    └─> ExitNodePicker (not relevant to Utter)
+```
+
+**Similarities to Utter:**
+- Login/intro flow → Main list of devices → Detail view
+- Search functionality
+- Settings via avatar
+- Single-activity architecture with Jetpack Compose
+
+---
+
+## Key UI Patterns from Tailscale
+
+### 1. MainView Header (Lines 156-210)
+
+**Pattern: Clean Status Header with Avatar**
+
+```kotlin
+ListItem(
+    leadingContent = { TintedSwitch(...) },      // VPN toggle (we skip)
+    headlineContent = { Text(tailnetName) },     // Domain/user info
+    supportingContent = {                        // Connection status
+        Row {
+            Text(stateStr)                       // "Connected", "Running"
+            HealthIcon()                         // Warning/error icon
+        }
+    },
+    trailingContent = {                          // Profile avatar
+        Avatar(
+            profile = user,
+            size = 36,
+            onClick = { navigateToSettings() }
+        )
+    }
+)
+```
+
+**Utter Application:**
+```typescript
+// Header in DeviceListScreen
+<View style={headerStyle}>
+  <View style={statusRow}>
+    <StatusDot isConnected={true} />
+    <Text>Connected to relay</Text>
+  </View>
+
+  <Avatar
+    source={{ uri: user.profilePicture }}
+    onPress={() => navigation.navigate('Settings')}
+  />
+</View>
+```
+
+**Key Takeaways:**
+- ✅ Status indicator (dot + text) on left
+- ✅ Clickable avatar on right → Settings
+- ✅ Clean, single-row header
+- ❌ Skip: VPN toggle switch (not needed for Utter)
+
+---
+
+### 2. Device/Peer List with Search (Lines 547-706)
+
+**Pattern: Search Bar + Scrollable List**
+
+```kotlin
+Column {
+    // Search bar
+    OutlinedTextField(
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        singleLine = true,
+        shape = MaterialTheme.shapes.extraLarge,
+        leadingIcon = { Icon(Icons.Outlined.Search) },
+        trailingIcon = {
+            if (isSearchFocused) {
+                IconButton { Icon(Icons.Outlined.Clear) }
+            }
+        },
+        placeholder = { Text("Search") },
+        value = searchTerm,
+        onValueChange = { onSearch(it) }
+    )
+
+    // Peer list
+    LazyColumn {
+        peerList.forEach { peerSet ->
+            stickyHeader {
+                Text(peerSet.user.DisplayName)  // Section header
+            }
+
+            items(peerSet.peers) { peer ->
+                ListItem(
+                    modifier = Modifier.combinedClickable(
+                        onClick = { navigateToPeerDetails(peer) },
+                        onLongClick = { showContextMenu(peer) }
+                    ),
+                    headlineContent = {
+                        Row {
+                            StatusDot(peer.isOnline)
+                            Spacer(8.dp)
+                            Text(peer.displayName)
+                        }
+                    },
+                    supportingContent = { Text(peer.ipAddress) }
+                )
+            }
+        }
+    }
+}
+```
+
+**Utter Application:**
+```typescript
+// DeviceListScreen
+<View style={container}>
+  {/* Search bar */}
+  <TextInput
+    style={searchBar}
+    placeholder="Search devices..."
+    value={searchTerm}
+    onChangeText={setSearchTerm}
+  />
+
+  {/* Device list */}
+  <FlatList
+    data={filteredDevices}
+    renderItem={({ item }) => (
+      <TouchableOpacity
+        onPress={() => navigation.navigate('TextInput', { device: item })}
+      >
+        <View style={deviceRow}>
+          <StatusDot isOnline={item.status === 'online'} />
+          <View>
+            <Text style={deviceName}>{item.deviceName}</Text>
+            <Text style={deviceIP}>{item.ipAddress}</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    )}
+    keyExtractor={(item) => item.deviceId}
+  />
+</View>
+```
+
+**Key Takeaways:**
+- ✅ Search bar with rounded corners (Material extraLarge shape)
+- ✅ Clear icon appears when focused
+- ✅ Status dot (colored circle) next to each device
+- ✅ Device name + IP address in two lines
+- ✅ Tap to navigate to detail/action screen
+- ❌ Skip: Long-press context menu (nice-to-have, not essential)
+
+---
+
+### 3. Status Dot Component
+
+**Pattern: Circular Status Indicator**
+
+```kotlin
+Box(
+    modifier = Modifier
+        .size(10.dp)
+        .background(
+            color = when(peer.status) {
+                "online" -> Color.Green
+                "offline" -> Color.Gray
+            },
+            shape = RoundedCornerShape(percent = 50)  // Perfect circle
+        )
+)
+```
+
+**Utter Application:**
+```typescript
+// StatusDot.tsx
+export function StatusDot({ isOnline }: { isOnline: boolean }) {
+  return (
+    <View
+      style={{
+        width: 10,
+        height: 10,
+        borderRadius: 5,  // Half of width/height = circle
+        backgroundColor: isOnline ? '#4CAF50' : '#9E9E9E',
+      }}
+    />
+  );
+}
+```
+
+**Usage:**
+- Green (#4CAF50) = Online/connected
+- Gray (#9E9E9E) = Offline/disconnected
+
+---
+
+### 4. Avatar Component (Lines 40-103)
+
+**Pattern: Circular Profile Picture with Fallback**
+
+```kotlin
+Avatar(
+    profile = user,
+    size = 36,
+    action = { navigateToSettings() },
+    isFocusable = true
+)
+
+// Implementation:
+Box(contentAlignment = Alignment.Center) {
+    // Fallback icon
+    if (!isIconLoaded) {
+        Icon(Icons.Default.Person)
+    }
+
+    // Profile picture overlay
+    AsyncImage(
+        model = profilePicURL,
+        modifier = Modifier.size(36.dp).clip(CircleShape),
+        onState = { state ->
+            if (state is Success) {
+                isIconLoaded = true
+            }
+        }
+    )
+}
+```
+
+**Utter Application:**
+```typescript
+// Avatar.tsx
+export function Avatar({
+  user,
+  size = 36,
+  onPress
+}: AvatarProps) {
+  return (
+    <TouchableOpacity onPress={onPress}>
+      <Image
+        source={{ uri: user.profilePicture }}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+        }}
+        defaultSource={require('./assets/default-avatar.png')}
+      />
+    </TouchableOpacity>
+  );
+}
+```
+
+---
+
+### 5. Material Design 3 Styling
+
+**Colors & Spacing from Tailscale:**
+
+```kotlin
+// Spacing
+.padding(16.dp)         // Standard padding
+.padding(8.dp)          // Small padding
+.size(10.dp)            // Status dot
+.size(36.dp)            // Avatar
+
+// Shapes
+RoundedCornerShape(10.dp)     // Cards, containers
+RoundedCornerShape(percent=50) // Circles (status dots, avatars)
+MaterialTheme.shapes.extraLarge // Search bar
+
+// Colors
+MaterialTheme.colorScheme.primary
+MaterialTheme.colorScheme.surface
+MaterialTheme.colorScheme.onSurface
+MaterialTheme.colorScheme.onSurfaceVariant
+```
+
+**Utter Equivalent (React Native):**
+```typescript
+const theme = {
+  spacing: {
+    xs: 4,
+    sm: 8,
+    md: 16,
+    lg: 24,
+    xl: 32,
+  },
+  borderRadius: {
+    sm: 8,
+    md: 12,
+    lg: 16,
+    full: 9999,  // Circle
+  },
+  colors: {
+    primary: '#6750A4',      // Material Purple
+    surface: '#FFFFFF',
+    onSurface: '#1C1B1F',
+    onSurfaceVariant: '#49454F',
+    statusOnline: '#4CAF50',
+    statusOffline: '#9E9E9E',
+  },
+};
+```
+
+---
+
+## Utter-Specific Screen Designs (Corrected)
+
+### Screen 1: SignInScreen (Google OAuth)
+
+```
+┌─────────────────────────┐
+│                         │
+│      Utter Logo         │
+│                         │
+│  "Welcome to Utter"     │
+│  "Dictate to Linux"     │
+│                         │
+│  [Sign in with Google]  │
+│                         │
+└─────────────────────────┘
+```
+
+**Pattern:** Simple, centered (like Tailscale's IntroView)
+- Logo + welcome text + single button
+- Auto-skip if already authenticated
+
+---
+
+### Screen 2: DeviceListScreen (Main Screen)
+
+```
+┌─────────────────────────────────────┐
+│ ● Connected       👤 [Avatar]       │ ← Header
+├─────────────────────────────────────┤
+│ 🔍 Search devices...                │ ← Search bar
+├─────────────────────────────────────┤
+│ Linux Targets                       │ ← Section header
+├─────────────────────────────────────┤
+│ ● Work Laptop                       │ ← Tap to open
+│   192.168.1.100                     │
+├─────────────────────────────────────┤
+│ ● Home Desktop                      │
+│   192.168.1.101                     │
+├─────────────────────────────────────┤
+│ ○ Server (offline)                  │
+│   192.168.1.102                     │
+└─────────────────────────────────────┘
+```
+
+**Interactions:**
+- **Tap device** → Navigate to TextInputScreen
+- **Tap avatar** → Navigate to Settings
+- **Type in search** → Filter devices in real-time
+
+**Key Elements:**
+- Connection status (● + "Connected")
+- Search bar (Material rounded style)
+- Status dots (green = online, gray = offline)
+- Device name + IP address
+
+---
+
+### Screen 3: TextInputScreen (CORRECTED)
+
+**Important:** This app does **NOT** implement voice recognition. It simply uses the **Google Keyboard's built-in voice input** feature.
+
+```
+┌─────────────────────────────────────┐
+│ ← Back     Work Laptop              │ ← Top bar
+├─────────────────────────────────────┤
+│                                     │
+│                                     │
+│                                     │
+│  ┌──────────────────────────────┐  │
+│  │ Hello, this is a test        │  │ ← TextInput
+│  │                              │  │   (auto-focused)
+│  │                              │  │
+│  └──────────────────────────────┘  │
+│                                     │
+│      Sending in 2s ▓▓▓▓░░░░        │ ← Countdown bar
+│      Tap to cancel                 │
+│                                     │
+└─────────────────────────────────────┘
+         ↑
+    Keyboard opens here
+    (Google Keyboard with mic button)
+```
+
+**How It Works:**
+
+1. **Screen Opens:**
+   - `TextInput` auto-focuses
+   - Keyboard automatically appears (Android/iOS system keyboard)
+   - User sees Google Keyboard with built-in microphone button
+
+2. **User Input:**
+   - **Option A:** User taps mic button on Google Keyboard → speaks → text appears
+   - **Option B:** User types directly on keyboard
+
+3. **Auto-Send Logic:**
+   - When user stops typing/speaking (detected via `onChangeText`)
+   - Start 2-second countdown
+   - Progress bar depletes: `▓▓▓▓▓░░░` → `▓▓▓░░░░░` → `░░░░░░░░` → SEND
+   - Tap anywhere to cancel countdown
+   - If user types more, countdown resets
+
+4. **Message Sent:**
+   - Text encrypted with target device's public key
+   - Sent via WebSocket to relay server
+   - TextInput clears
+   - Brief confirmation: "✓ Sent"
+
+**Implementation:**
+```typescript
+// TextInputScreen.tsx
+export default function TextInputScreen({ route, navigation }) {
+  const { device } = route.params;
+  const [text, setText] = useState('');
+  const [countdown, setCountdown] = useState(0);
+  const textInputRef = useRef<TextInput>(null);
+
+  // Auto-focus keyboard on mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      textInputRef.current?.focus();
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Auto-send countdown
+  useEffect(() => {
+    if (text.trim() === '') {
+      setCountdown(0);
+      return;
+    }
+
+    const startTime = Date.now();
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / 2000, 1); // 2 seconds
+      setCountdown(progress);
+
+      if (progress >= 1) {
+        clearInterval(interval);
+        sendMessage();
+      }
+    }, 50);
+
+    return () => clearInterval(interval);
+  }, [text]);
+
+  const sendMessage = async () => {
+    if (!text.trim()) return;
+
+    const encrypted = await encryptMessage(text, device.publicKey);
+    await sendToRelay(encrypted, device.deviceId);
+
+    setText('');
+    setCountdown(0);
+
+    // Show confirmation
+    showToast('✓ Sent');
+  };
+
+  const cancelSend = () => {
+    setText('');
+    setCountdown(0);
+  };
+
+  return (
+    <View style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Text>← Back</Text>
+        </TouchableOpacity>
+        <Text style={styles.deviceName}>{device.deviceName}</Text>
+      </View>
+
+      {/* Main text input area */}
+      <TextInput
+        ref={textInputRef}
+        style={styles.textInput}
+        placeholder="Start typing or tap mic on keyboard..."
+        value={text}
+        onChangeText={setText}
+        multiline
+        autoFocus={true}  // ← Key: auto-focus
+        keyboardType="default"
+        returnKeyType="default"
+      />
+
+      {/* Countdown bar */}
+      {countdown > 0 && (
+        <TouchableOpacity onPress={cancelSend}>
+          <View style={styles.countdownContainer}>
+            <Text style={styles.countdownText}>
+              Sending in {Math.ceil((1 - countdown) * 2)}s
+            </Text>
+            <View style={styles.progressBarContainer}>
+              <View
+                style={[
+                  styles.progressBar,
+                  { width: `${(1 - countdown) * 100}%` }
+                ]}
+              />
+            </View>
+            <Text style={styles.cancelHint}>Tap to cancel</Text>
+          </View>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+```
+
+**Key Points:**
+- ❌ **NO** microphone button in the app
+- ✅ **YES** to Google Keyboard's mic button (built-in)
+- ✅ Auto-focus `TextInput` on screen mount
+- ✅ Keyboard opens automatically
+- ✅ User can type OR use keyboard mic
+- ✅ 2-second countdown after typing stops
+- ✅ Tap to cancel countdown
+
+---
+
+## Comparison: Tailscale vs Utter
+
+| Feature | Tailscale | Utter |
+|---------|-----------|-------|
+| **Main Toggle** | VPN on/off switch | ❌ Not needed |
+| **Peer List** | Nodes in tailnet | ✅ Linux target devices |
+| **Peer Details** | Full info screen | ✅ Simplified (just tap to send) |
+| **Search** | Full-screen SearchView | ✅ Inline search bar |
+| **Status Indicator** | VPN connection state | ✅ WebSocket connection state |
+| **Avatar** | Profile pic → Settings | ✅ Same pattern |
+| **Exit Nodes** | Complex picker | ❌ Not applicable |
+| **Voice Input** | N/A | ✅ Google Keyboard's mic (not in app) |
+| **Auto-Send** | N/A | ✅ 2-second countdown |
+
+---
+
+## Design System Summary
+
+### Spacing
+- `4dp` / `8dp` - Small gaps
+- `16dp` - Standard padding
+- `24dp` / `32dp` - Large spacing
+
+### Border Radius
+- `8dp` - Small rounded corners
+- `12dp` - Medium rounded corners
+- `50%` - Circles (status dots, avatars)
+- `extraLarge` - Search bars (~28dp)
+
+### Colors (Material Design 3)
+- **Primary:** `#6750A4` (Purple)
+- **Surface:** `#FFFFFF` (White)
+- **OnSurface:** `#1C1B1F` (Dark gray)
+- **OnSurfaceVariant:** `#49454F` (Medium gray)
+- **Status Online:** `#4CAF50` (Green)
+- **Status Offline:** `#9E9E9E` (Gray)
+
+### Typography
+- **titleMedium:** 16sp, Medium weight
+- **bodyMedium:** 14sp, Regular weight
+- **bodySmall:** 12sp, Regular weight
+- **labelSmall:** 11sp, Medium weight
+
+---
+
+## Key Learnings Applied to Expo Implementation
+
+### ✅ Patterns to Adopt
+
+1. **Clean header with status + avatar** (MainView pattern)
+2. **Search bar with rounded corners** (Material extraLarge shape)
+3. **Status dots** (10dp circles, green/gray)
+4. **Device list with tap-to-navigate** (LazyColumn → FlatList)
+5. **Material Design 3 theming** (colors, spacing, typography)
+6. **Animated transitions** (slide + fade)
+7. **Auto-focus text input** (keyboard opens automatically)
+
+### ❌ Patterns to Skip
+
+1. **VPN toggle switch** (not relevant)
+2. **Exit node picker** (not relevant)
+3. **Full-screen search** (inline is simpler for Utter)
+4. **Long-press context menu** (nice-to-have, not essential)
+5. **Microphone button in app** (using Google Keyboard's mic instead)
+
+### 🆕 Utter-Specific Additions
+
+1. **Auto-send countdown** (2-second timer with visual progress)
+2. **Tap to cancel** countdown
+3. **Minimal text input** (clean, auto-focused)
+4. **Keyboard auto-open** (when navigating to TextInputScreen)
+
+---
+
+## Updated Phase 5: Text Input Integration (Not Voice)
+
+**Correction:** Phase 5 is **not** about voice input libraries. It's about:
+1. Auto-focusing text input
+2. Keyboard management
+3. Auto-send countdown logic
+
+### Goals (Revised)
+- Auto-focus `TextInput` when screen opens
+- Keyboard opens automatically
+- Implement 2-second auto-send countdown
+- Allow user to type or use Google Keyboard's mic
+- Send encrypted messages to target device
+
+### Dependencies (Revised)
+```bash
+# No voice libraries needed!
+# Just standard React Native components:
+# - TextInput (built-in)
+# - Keyboard API (built-in)
+```
+
+### Implementation (Revised)
+
+See corrected `TextInputScreen.tsx` example above.
+
+**Success Criteria (Revised):**
+- ✅ Keyboard opens automatically when screen opens
+- ✅ User can type OR use keyboard mic button
+- ✅ Text appears in input field
+- ✅ Auto-send triggers after 2 seconds of no typing
+- ✅ Countdown bar animates (depletes over 2 seconds)
+- ✅ Tap to cancel countdown works
+- ✅ Messages encrypted before sending
+- ✅ Messages delivered to target device
+
+---
+
 # Conclusion
 
 ## Recommended Approach
@@ -2106,17 +3329,43 @@ eas update --branch production --message "Fix voice input bug"
 
 ## References
 
+### Expo & React Native
 - [Expo Documentation](https://docs.expo.dev/)
 - [React Navigation](https://reactnavigation.org/)
 - [expo-auth-session](https://docs.expo.dev/versions/latest/sdk/auth-session/)
 - [expo-crypto](https://docs.expo.dev/versions/latest/sdk/crypto/)
 - [expo-secure-store](https://docs.expo.dev/versions/latest/sdk/securestore/)
-- [react-native-voice](https://github.com/react-native-voice/voice)
 - [EAS Build](https://docs.expo.dev/build/introduction/)
 - [React Native Testing Library](https://callstack.github.io/react-native-testing-library/)
 
+### UI/UX Reference
+- [Tailscale Android App (GitHub)](https://github.com/tailscale/tailscale-android) - UI/UX patterns, Material Design 3 implementation
+- [Tailscale Android Blog Post](https://tailscale.com/blog/android) - May 2024 redesign announcement
+- [Material Design 3](https://m3.material.io/) - Design system reference
+
 ---
 
-**Document Version:** 1.0
+**Document Version:** 1.3
 **Last Updated:** 2025-10-19
-**Status:** Ready for review and implementation
+**Status:** ⚠️ Reordering in progress - Use Implementation Order Guide
+
+**Changelog:**
+- v1.3 (2025-10-19): **TOOLCHAIN** - Added mise and pnpm throughout document
+- v1.3 (2025-10-19): All `npm install` → `pnpm add`, `npm test` → `pnpm test`
+- v1.3 (2025-10-19): Added Development Environment section with mise setup
+- v1.3 (2025-10-19): Added Phase 1.0: Setup Toolchain with mise
+- v1.3 (2025-10-19): Added `.mise.toml` configuration examples
+- v1.2 (2025-10-19): **RESTRUCTURING** - Added Phase 0 (Crypto Spike), reordered phases to fix dependencies
+- v1.2 (2025-10-19): Added Implementation Order Guide (see top of Implementation Phases section)
+- v1.2 (2025-10-19): Updated Phase Overview table with correct order and risk levels
+- v1.1 (2025-10-19): Added UI/UX analysis from Tailscale Android app (tailscale-android/)
+- v1.1 (2025-10-19): Corrected Phase 5 - Text Input (NOT voice recognition in app)
+- v1.1 (2025-10-19): Clarified that app uses Google Keyboard's mic button, not custom voice input
+- v1.0 (2025-10-19): Initial document with 7-phase implementation plan
+
+**Known Issues in v1.3:**
+- ⚠️ Phase headings updated but some content hasn't moved yet
+- ⚠️ Use "Implementation Order Guide" table to find correct content for each phase
+- ⚠️ Phase 2 heading says "Auth" but content below is WebSocket (use "Phase 3" section for Auth content)
+- ⚠️ Phase 3 heading says "WebSocket" but content below is Auth (use "Phase 2" section for WebSocket content)
+- 📝 Phase 4 (Device List UI) needs to be extracted from Phase 6 content
