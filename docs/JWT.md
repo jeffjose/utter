@@ -715,14 +715,15 @@ export GOOGLE_CLIENT_SECRET="your-client-secret"
 ## Implementation Checklist
 
 - [x] Phase 1: Dual mode (JWT optional)
-- [ ] Phase 2: JWT Required
-  - [ ] Generate and set JWT_SECRET in .env
-  - [ ] Remove REQUIRE_JWT flag from code
-  - [ ] Add POST /auth/refresh endpoint
-  - [ ] Update relay server to always require JWT
-  - [ ] Update linux-test-client for token refresh
-  - [ ] Update utterd (Rust) for JWT support
-  - [ ] Test all components with enforced JWT
+- [x] Phase 2: JWT Required
+  - [x] Generate and set JWT_SECRET in .env
+  - [x] Remove REQUIRE_JWT flag from code
+  - [x] Add POST /auth/refresh endpoint
+  - [x] Update relay server to always require JWT
+  - [x] Update linux-test-client for token refresh
+  - [x] Update utterd (Rust) for JWT support
+  - [x] Test all components with enforced JWT
+  - [x] Add sender public key verification (bonus security)
 - [ ] Phase 3: Advanced Features
   - [ ] Multi-provider OAuth (GitHub, Microsoft)
   - [ ] Custom JWT claims (device limits, features)

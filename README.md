@@ -7,8 +7,8 @@ Speak into your Android phone and have the text appear on your Linux computer as
 Utter enables voice dictation from an Android device to a Linux computer. The system consists of three components:
 
 1. **Android App** (Kotlin) - Captures voice input via Google speech-to-text
-2. **Relay Server** (Node.js/TypeScript) - Routes messages between devices
-3. **Linux Client** (Python) - Simulates keyboard input on Linux
+2. **Relay Server** (Node.js/TypeScript) - Routes messages with JWT authentication
+3. **Linux Client** (Rust) - Simulates keyboard input on Linux
 
 ## Architecture
 
@@ -38,7 +38,8 @@ Server will start on `ws://localhost:8080`.
 
 ```bash
 cd utterd
-uv run utterd
+cargo build --release
+./target/release/utterd
 ```
 
 ### 3. Set Up Android App
@@ -67,8 +68,9 @@ utter/
 │   │   └── index.ts
 │   ├── package.json
 │   └── README.md
-├── utterd/                     # Python client (uses inline deps)
-│   ├── utterd
+├── utterd/                     # Rust client
+│   ├── src/
+│   ├── Cargo.toml
 │   └── README.md
 └── README.md                   # This file
 ```
@@ -88,15 +90,14 @@ curl -fsSL https://get.pnpm.io/install.sh | sh -
 
 ### Linux Client
 
-- Python 3.9+
-- [uv](https://docs.astral.sh/uv/) - Fast Python package manager
+- Rust 1.70+
 - `xdotool` (X11) or `ydotool` (Wayland)
 
 Install on Ubuntu/Debian:
 
 ```bash
-# Install uv
-curl -LsSf https://astral.sh/uv/install.sh | sh
+# Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # Install keyboard tools
 sudo apt install xdotool    # For X11
@@ -151,24 +152,11 @@ Phase 1: Direct echo mode - all messages broadcast to all clients
 
 ```bash
 cd utterd
-uv run utterd
+cargo build --release
+./target/release/utterd
 ```
 
-You should see an interactive status panel:
-
-```
-╭─────────────── 🎤 utterd ────────────────╮
-│                                                      │
-│   Status:     Registered - Ready                    │
-│   Server:     ws://localhost:8080                   │
-│   Client ID:  abc123xyz                             │
-│   Tool:       ✓ xdotool available                   │
-│   Messages:   0                                      │
-│                                                      │
-╰───── Waiting for voice input from Android... ───────╯
-```
-
-The display updates in real-time as messages arrive!
+The client will authenticate with Google OAuth and display real-time message status.
 
 ### Test Full Flow
 
@@ -246,27 +234,24 @@ pnpm start         # Run production build
 
 ```bash
 cd utterd
-uv run utterd --help    # See all options
-uv run utterd --server ws://example.com:8080  # Custom server
-uv run utterd --ydotool # Use ydotool instead of xdotool
-
-# Or make it executable and run directly
-chmod +x utterd
-./utterd --help
+cargo build --release
+./target/release/utterd --help              # See all options
+./target/release/utterd --server ws://example.com:8080
+./target/release/utterd --tool ydotool      # Use ydotool instead of xdotool
 ```
 
 ### Android App
 
 See [android-app/README.md](android-app/README.md) for Android Studio setup.
 
-## Roadmap
+## Security
 
-See [docs/PLAN.md](docs/PLAN.md) for detailed implementation phases:
+- **JWT Authentication** - Google OAuth with JWT tokens
+- **E2E Encryption** - Hybrid encryption (X25519 + AES-256-GCM)
+- **Sender Verification** - Cryptographic proof of message authenticity
+- **User Isolation** - Messages only route between your devices
 
-- [x] **Phase 1**: Same-network MVP (current)
-- [ ] **Phase 2**: Cloud relay server
-- [ ] **Phase 3**: UX polish & reliability
-- [ ] **Phase 4**: Security & encryption
+See [docs/](docs/) for detailed architecture documentation.
 
 ## Inspiration
 
@@ -282,4 +267,4 @@ MIT
 
 ---
 
-**Status:** Phase 1 MVP - Basic functionality working on same network
+**Status:** Production-ready with JWT authentication and E2E encryption
