@@ -449,6 +449,8 @@ function handleMessage(sender: Client, message: any) {
     forwardedMessage.encrypted = true;
     forwardedMessage.nonce = message.nonce;
     forwardedMessage.ephemeralPublicKey = message.ephemeralPublicKey;
+    // Include sender's public key for authenticity verification
+    forwardedMessage.senderPublicKey = sender.publicKey;
   }
 
   targetClient.ws.send(JSON.stringify(forwardedMessage));

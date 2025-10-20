@@ -321,7 +321,31 @@ class TestClient {
 
         case 'message':
         case 'text':
-          console.log(`\n${colors.cyan}↓ ${msg.from}:${colors.reset} ${msg.content}`);
+          // Handle encrypted messages
+          if (msg.encrypted) {
+            try {
+              const encryptedMsg = {
+                ciphertext: msg.content,
+                nonce: msg.nonce,
+                ephemeralPublicKey: msg.ephemeralPublicKey
+              };
+
+              // Use sender's public key for authenticity verification
+              const senderPublicKey = msg.senderPublicKey || '';
+              if (!senderPublicKey) {
+                console.log(`${colors.yellow}⚠ Warning: No sender public key provided. Message authenticity cannot be verified.${colors.reset}`);
+              }
+
+              const plaintext = this.messageEncryption.decrypt(encryptedMsg, senderPublicKey);
+              console.log(`\n${colors.cyan}↓ ${msg.from}:${colors.reset} ${plaintext}`);
+            } catch (error) {
+              console.log(`\n${colors.red}✗ Failed to decrypt message from ${msg.from}: ${error instanceof Error ? error.message : String(error)}${colors.reset}`);
+            }
+          } else {
+            // Plaintext messages (should be rejected by relay server, but handle gracefully)
+            console.log(`\n${colors.yellow}⚠ Received plaintext message (E2E encryption required):${colors.reset}`);
+            console.log(`${colors.cyan}↓ ${msg.from}:${colors.reset} ${msg.content}`);
+          }
           this.updatePrompt();
           this.rl.prompt();
           break;

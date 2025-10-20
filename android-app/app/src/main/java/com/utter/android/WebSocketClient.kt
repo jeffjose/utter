@@ -186,18 +186,24 @@ class WebSocketClient(
                             val content = json.getString("content")
 
                             if (encrypted && cryptoManager != null) {
-                                // Decrypt the message
+                                // Decrypt the message with sender verification
                                 try {
                                     val encryptedMsg = EncryptedMessage(
                                         ciphertext = content,
                                         nonce = json.getString("nonce"),
                                         ephemeralPublicKey = json.getString("ephemeralPublicKey")
                                     )
-                                    // TODO: Get sender's public key from device list
-                                    // For now, we just decrypt (sender verification can be added later)
+
+                                    // Get sender's public key from message (provided by relay server)
+                                    val senderPublicKey = json.optString("senderPublicKey", null)
+
+                                    if (senderPublicKey == null || senderPublicKey.isEmpty()) {
+                                        Log.w(TAG, "Warning: No sender public key provided. Message authenticity cannot be verified.")
+                                    }
+
                                     val plaintext = cryptoManager.decryptMessage(
                                         encryptedMsg,
-                                        "" // sender public key not strictly needed for decryption
+                                        senderPublicKey ?: ""
                                     )
                                     Log.d(TAG, "Decrypted message: $plaintext")
                                     listener?.onMessage(plaintext)

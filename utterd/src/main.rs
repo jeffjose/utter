@@ -157,6 +157,8 @@ enum WsMessage {
         nonce: Option<String>,
         #[serde(rename = "ephemeralPublicKey", skip_serializing_if = "Option::is_none")]
         ephemeral_public_key: Option<String>,
+        #[serde(rename = "senderPublicKey", skip_serializing_if = "Option::is_none")]
+        sender_public_key: Option<String>,
     },
     Pong,
 }
@@ -296,7 +298,7 @@ impl UtterClient {
                 std::io::stdout().flush().unwrap();
                 None
             }
-            WsMessage::Text { content, from, timestamp, encrypted, nonce, ephemeral_public_key } => {
+            WsMessage::Text { content, from, timestamp, encrypted, nonce, ephemeral_public_key, sender_public_key } => {
                 // ENFORCE ENCRYPTION: Reject plaintext messages
                 if !encrypted.unwrap_or(false) {
                     println!("\r\x1b[K{}✗ Rejected plaintext message{}", colors::RED, colors::RESET);
@@ -313,7 +315,13 @@ impl UtterClient {
                         ephemeral_public_key: eph_key,
                     };
 
-                    match enc.decrypt(&encrypted_msg, "") {
+                    // Use sender's public key for authenticity verification
+                    let sender_key = sender_public_key.as_deref().unwrap_or("");
+                    if sender_key.is_empty() {
+                        eprintln!("{}⚠ Warning: No sender public key provided. Message authenticity cannot be verified.{}", colors::YELLOW, colors::RESET);
+                    }
+
+                    match enc.decrypt(&encrypted_msg, sender_key) {
                         Ok(plaintext) => plaintext,
                         Err(e) => {
                             println!("\r\x1b[K{}✗ Decryption failed: {}{}", colors::RED, e, colors::RESET);
