@@ -41,13 +41,22 @@ export class WebSocketClient {
 
     this.ws.onopen = () => {
       console.log('WebSocket connected');
-      this.onConnectionChange(true);
+      // Don't set connected=true yet, wait for registration
       this.register();
     };
 
     this.ws.onmessage = (event) => {
       try {
+        console.log('WebSocket received raw message:', event.data);
         const message = JSON.parse(event.data) as Message;
+        console.log('WebSocket parsed message:', JSON.stringify(message, null, 2));
+
+        // Set connected=true when registration completes
+        if (message.type === 'registered') {
+          console.log('Registration complete, setting connected=true');
+          this.onConnectionChange(true);
+        }
+
         this.onMessage(message);
       } catch (error) {
         console.error('Failed to parse message:', error);
@@ -97,6 +106,14 @@ export class WebSocketClient {
   }
 
   /**
+   * Request device list from server
+   */
+  requestDeviceList(): void {
+    this.send({ type: 'get_devices' });
+    console.log('Requested device list from server');
+  }
+
+  /**
    * Schedule reconnection attempt
    */
   private scheduleReconnect(): void {
@@ -111,11 +128,14 @@ export class WebSocketClient {
    */
   private async register(): Promise<void> {
     try {
-      const idToken = await authManager.getIdToken();
-      const publicKey = await keyManager.getPublicKey();
+      const relayJwt = await authManager.getRelayJWT();
+      console.log('Relay JWT retrieved:', relayJwt ? `${relayJwt.substring(0, 20)}...` : 'null');
 
-      if (!idToken) {
-        console.error('No ID token available for registration');
+      const publicKey = await keyManager.getPublicKey();
+      console.log('Public Key retrieved:', publicKey ? `${publicKey.substring(0, 20)}...` : 'null');
+
+      if (!relayJwt) {
+        console.error('No relay JWT available for registration');
         return;
       }
 
@@ -127,8 +147,8 @@ export class WebSocketClient {
 
       const registerMsg: RegisterMessage = {
         type: 'register',
-        token: idToken,
-        clientType: Platform.OS === 'ios' ? 'ios' : 'android',
+        jwt: relayJwt,
+        clientType: 'controller',  // Mobile app is a controller that sends commands to targets
         deviceId,
         deviceName,
         publicKey,
@@ -137,10 +157,19 @@ export class WebSocketClient {
         arch: 'arm64',
       };
 
+      console.log('Sending registration message:', {
+        type: registerMsg.type,
+        clientType: registerMsg.clientType,
+        deviceName: registerMsg.deviceName,
+        hasJwt: !!registerMsg.jwt,
+        hasPublicKey: !!registerMsg.publicKey,
+      });
+
       this.send(registerMsg);
       console.log('Registration message sent');
     } catch (error) {
       console.error('Registration failed:', error);
+      console.error('Registration error details:', error instanceof Error ? error.message : String(error));
     }
   }
 }

@@ -23,9 +23,12 @@ export interface KeyPair {
 
 /**
  * Generate X25519 keypair using TweetNaCl
+ * Uses expo-crypto for random bytes (PRNG)
  */
 export async function generateX25519KeyPair(): Promise<KeyPair> {
-  const keyPair = nacl.box.keyPair();
+  // Generate 32 random bytes using expo-crypto (not nacl.randomBytes which needs Node crypto)
+  const randomBytes = await Crypto.getRandomBytesAsync(32);
+  const keyPair = nacl.box.keyPair.fromSecretKey(new Uint8Array(randomBytes));
 
   return {
     publicKey: naclUtil.encodeBase64(keyPair.publicKey),
@@ -35,12 +38,14 @@ export async function generateX25519KeyPair(): Promise<KeyPair> {
 
 /**
  * Perform X25519 ECDH key exchange
+ * Returns raw X25519 shared secret (not processed through HSalsa20)
  */
 export function performECDH(myPrivateKey: string, theirPublicKey: string): Uint8Array {
   const privateKeyBytes = naclUtil.decodeBase64(myPrivateKey);
   const publicKeyBytes = naclUtil.decodeBase64(theirPublicKey);
 
-  return nacl.box.before(publicKeyBytes, privateKeyBytes);
+  // Use scalarMult for raw X25519 ECDH (not box.before which applies HSalsa20)
+  return nacl.scalarMult(privateKeyBytes, publicKeyBytes);
 }
 
 /**

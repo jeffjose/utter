@@ -6,6 +6,7 @@
 import * as SecureStore from 'expo-secure-store';
 
 const ID_TOKEN_KEY = 'id_token';
+const RELAY_JWT_KEY = 'relay_jwt';
 const USER_INFO_KEY = 'user_info';
 
 export interface UserInfo {
@@ -27,6 +28,20 @@ export class AuthManager {
    */
   async getIdToken(): Promise<string | null> {
     return await SecureStore.getItemAsync(ID_TOKEN_KEY);
+  }
+
+  /**
+   * Save relay server JWT
+   */
+  async saveRelayJWT(jwt: string): Promise<void> {
+    await SecureStore.setItemAsync(RELAY_JWT_KEY, jwt);
+  }
+
+  /**
+   * Get stored relay server JWT
+   */
+  async getRelayJWT(): Promise<string | null> {
+    return await SecureStore.getItemAsync(RELAY_JWT_KEY);
   }
 
   /**
@@ -63,6 +78,7 @@ export class AuthManager {
    */
   async clearAuth(): Promise<void> {
     await SecureStore.deleteItemAsync(ID_TOKEN_KEY);
+    await SecureStore.deleteItemAsync(RELAY_JWT_KEY);
     await SecureStore.deleteItemAsync(USER_INFO_KEY);
   }
 }

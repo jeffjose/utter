@@ -1,3 +1,7 @@
+// IMPORTANT: Install crypto polyfill FIRST, before any other imports
+// This provides crypto.randomBytes() and other crypto APIs for tweetnacl
+import 'react-native-quick-crypto';
+
 import { registerRootComponent } from 'expo';
 
 import App from './App';

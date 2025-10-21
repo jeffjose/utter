@@ -1,10 +1,11 @@
 export interface Device {
-  id: string;
-  name: string;
-  type: 'android' | 'ios' | 'linux' | 'windows' | 'macos';
-  publicKey: string;
-  lastSeen?: number;
-  online?: boolean;
+  deviceId: string;
+  deviceName: string;
+  deviceType: 'controller' | 'target';
+  userId: string;
+  publicKey?: string;
+  status: 'online' | 'offline';
+  lastConnected: Date | string;
 }
 
 export interface DeviceListMessage {

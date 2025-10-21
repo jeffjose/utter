@@ -17,7 +17,9 @@ import { DEFAULT_WEBSOCKET_URL } from '../utils/constants';
 
 export default function ServerConnectionScreen({ navigation }: any) {
   const { isConnected, setServerUrl, connect } = useConnectionStore();
-  const [url, setUrl] = useState(DEFAULT_WEBSOCKET_URL);
+  // Strip ws:// or wss:// prefix from default URL for display
+  const displayUrl = DEFAULT_WEBSOCKET_URL.replace(/^wss?:\/\//, '');
+  const [url, setUrl] = useState(displayUrl);
   const [isConnecting, setIsConnecting] = useState(false);
 
   useEffect(() => {
@@ -27,14 +29,28 @@ export default function ServerConnectionScreen({ navigation }: any) {
     }
   }, [isConnected]);
 
-  const handleConnect = () => {
+  const handleConnect = async () => {
     if (!url.trim()) {
       return;
     }
 
+    // Auto-prepend ws:// if not present
+    let serverUrl = url.trim();
+    if (!serverUrl.startsWith('ws://') && !serverUrl.startsWith('wss://')) {
+      serverUrl = `ws://${serverUrl}`;
+    }
+
     setIsConnecting(true);
-    setServerUrl(url);
-    connect();
+    setServerUrl(serverUrl);
+
+    try {
+      await connect();
+    } catch (error) {
+      console.error('Connection error:', error);
+      setIsConnecting(false);
+      // Could show an alert here
+      return;
+    }
 
     // Timeout after 10 seconds
     setTimeout(() => {
@@ -49,12 +65,12 @@ export default function ServerConnectionScreen({ navigation }: any) {
       <View style={styles.content}>
         <Text style={styles.title}>Connect to Server</Text>
         <Text style={styles.subtitle}>
-          Enter your relay server WebSocket URL
+          Enter your relay server address
         </Text>
 
         <TextInput
           style={styles.input}
-          placeholder="ws://192.168.1.100:8080"
+          placeholder="192.168.3.189:8080"
           value={url}
           onChangeText={setUrl}
           autoCapitalize="none"

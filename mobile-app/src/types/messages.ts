@@ -5,7 +5,7 @@ export interface EncryptedMessage {
 }
 
 export interface Message {
-  type: 'message' | 'register' | 'device_list' | 'error';
+  type: 'message' | 'register' | 'device_list' | 'devices' | 'error' | 'registered' | 'connected';
   from?: string;
   to?: string;
   content?: string;
@@ -18,8 +18,8 @@ export interface Message {
 
 export interface RegisterMessage {
   type: 'register';
-  token: string;
-  clientType: 'android' | 'ios';
+  jwt: string;  // Relay server JWT (obtained by exchanging Google ID token)
+  clientType: 'controller' | 'target';  // Mobile app is a controller
   deviceId: string;
   deviceName: string;
   publicKey: string;

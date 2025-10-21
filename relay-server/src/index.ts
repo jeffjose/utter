@@ -12,6 +12,15 @@ import { signJWT, verifyJWT, refreshJWT, getExpirationSeconds } from './jwt';
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 8080;
 const MAX_MESSAGE_LENGTH = process.env.MAX_MESSAGE_LENGTH ? parseInt(process.env.MAX_MESSAGE_LENGTH) : 5000;
 
+// Debug mode - enabled with --debug flag
+const DEBUG = process.argv.includes('--debug');
+
+function debug(...args: any[]) {
+  if (DEBUG) {
+    console.log(colors.dim + '[DEBUG]' + colors.reset, ...args);
+  }
+}
+
 // ANSI color codes
 const colors = {
   reset: '\x1b[0m',
@@ -175,6 +184,9 @@ httpServer.listen(PORT, () => {
   console.log(`${colors.bright}${colors.cyan}Utter${colors.reset} ${colors.dim}Relay Server${colors.reset}`);
   console.log(`${colors.gray}${'─'.repeat(60)}${colors.reset}`);
   console.log(`${colors.green}●${colors.reset} Listening on ${colors.bright}*:${PORT}${colors.reset}`);
+  if (DEBUG) {
+    console.log(`${colors.yellow}⚠${colors.reset}  Debug mode ${colors.bright}ENABLED${colors.reset}`);
+  }
   console.log('');
   console.log(`${colors.dim}HTTP Endpoints:${colors.reset}`);
   console.log(`  ${colors.cyan}POST http://localhost:${PORT}/auth${colors.reset} ${colors.dim}(obtain JWT)${colors.reset}`);
@@ -215,6 +227,7 @@ wss.on('connection', (ws: WebSocket) => {
   ws.on('message', (data: Buffer) => {
     try {
       const message = JSON.parse(data.toString());
+      debug(`${colors.cyan}← IN${colors.reset} [${clientId}] ${JSON.stringify(message)}`);
 
       // Handle different message types
       switch (message.type) {
@@ -235,7 +248,9 @@ wss.on('connection', (ws: WebSocket) => {
           break;
 
         case 'ping':
-          ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
+          const pong = { type: 'pong', timestamp: Date.now() };
+          debug(`${colors.magenta}→ OUT${colors.reset} [${clientId}] ${JSON.stringify(pong)}`);
+          ws.send(JSON.stringify(pong));
           break;
 
         default:
@@ -257,12 +272,14 @@ wss.on('connection', (ws: WebSocket) => {
   });
 
   // Send welcome message
-  ws.send(JSON.stringify({
+  const welcomeMsg = {
     type: 'connected',
     clientId,
     timestamp: Date.now(),
     message: 'Connected to Utter Relay Server'
-  }));
+  };
+  debug(`${colors.magenta}→ OUT${colors.reset} [${clientId}] ${JSON.stringify(welcomeMsg)}`);
+  ws.send(JSON.stringify(welcomeMsg));
 });
 
 function handleRegister(client: Client, message: any) {
@@ -332,29 +349,45 @@ function handleRegister(client: Client, message: any) {
   const metaStr = metadata.length > 0 ? ` ${colors.dim}• ${metadata.join(' • ')}${colors.reset}` : '';
 
   console.log(`${colors.dim}[${client.id}]${colors.reset} ${colors.green}●${colors.reset} ${colors.green}UP${colors.reset} ${colors.bright}${client.deviceName}${colors.reset} ${colors.dim}(${typeColor}${client.type}${colors.reset}${colors.dim})${colors.reset}${metaStr}`);
+  debug(`  Registered: userId=${client.userId} deviceId=${client.deviceId} type=${client.type}`);
 
-  client.ws.send(JSON.stringify({
+  const registeredMsg = {
     type: 'registered',
     clientId: client.id,
     deviceId: client.deviceId,
     clientType: client.type,
     userId: client.userId,
     timestamp: Date.now()
-  }));
+  };
+  debug(`${colors.magenta}→ OUT${colors.reset} [${client.id}] ${JSON.stringify(registeredMsg)}`);
+  client.ws.send(JSON.stringify(registeredMsg));
 }
 
 function handleGetDevices(client: Client) {
+  debug(`Get devices request from [${client.id}] userId=${client.userId} type=${client.type}`);
+
   const devices: Device[] = [];
+  const allClients: any[] = [];
 
   // Get devices for this user
   // Controllers only see targets (devices they can send commands to)
   clients.forEach((c) => {
+    allClients.push({
+      id: c.id,
+      userId: c.userId,
+      type: c.type,
+      deviceId: c.deviceId,
+      deviceName: c.deviceName
+    });
+
     if (c.userId === client.userId && c.deviceId) {
       // Controllers only see targets
       if (client.type === 'controller' && c.type !== 'target') {
+        debug(`  Skipping ${c.id} (type=${c.type}, not a target)`);
         return;
       }
 
+      debug(`  Adding ${c.id} deviceId=${c.deviceId} type=${c.type}`);
       devices.push({
         deviceId: c.deviceId,
         deviceName: c.deviceName || c.deviceId,
@@ -364,14 +397,25 @@ function handleGetDevices(client: Client) {
         status: c.status,
         lastConnected: c.connectedAt
       });
+    } else {
+      if (c.userId !== client.userId) {
+        debug(`  Skipping ${c.id} (different user: ${c.userId})`);
+      } else if (!c.deviceId) {
+        debug(`  Skipping ${c.id} (no deviceId)`);
+      }
     }
   });
 
-  client.ws.send(JSON.stringify({
+  debug(`All connected clients:`, JSON.stringify(allClients, null, 2));
+  debug(`Returning ${devices.length} devices to [${client.id}]`);
+
+  const response = {
     type: 'devices',
     devices,
     timestamp: Date.now()
-  }));
+  };
+  debug(`${colors.magenta}→ OUT${colors.reset} [${client.id}] ${JSON.stringify(response)}`);
+  client.ws.send(JSON.stringify(response));
 }
 
 function handleMessage(sender: Client, message: any) {

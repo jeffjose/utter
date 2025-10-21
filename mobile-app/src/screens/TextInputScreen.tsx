@@ -88,18 +88,27 @@ export default function TextInputScreen({ route, navigation }: Props) {
 
     try {
       // Encrypt message
+      console.log('Encrypting message:', text);
+      console.log('Recipient public key:', publicKey);
       const encrypted = await encryptMessage(text, publicKey);
+      console.log('Encrypted result:', {
+        ciphertextLength: encrypted.ciphertext.length,
+        nonceLength: encrypted.nonce.length,
+        ephemeralPublicKeyLength: encrypted.ephemeral_public_key.length,
+      });
 
       // Send to relay server
-      send({
+      const message = {
         type: 'message',
         to: deviceId,
         encrypted: true,
-        ciphertext: encrypted.ciphertext,
+        content: encrypted.ciphertext,  // Relay server expects 'content' field
         nonce: encrypted.nonce,
-        ephemeral_public_key: encrypted.ephemeral_public_key,
+        ephemeralPublicKey: encrypted.ephemeral_public_key,  // camelCase for relay server
         timestamp: Date.now(),
-      });
+      };
+      console.log('Sending message:', JSON.stringify(message, null, 2));
+      send(message);
 
       // Clear text and reset
       setText('');
@@ -107,6 +116,7 @@ export default function TextInputScreen({ route, navigation }: Props) {
       console.log('Message sent successfully');
     } catch (error) {
       console.error('Failed to send message:', error);
+      console.error('Error details:', error instanceof Error ? error.stack : String(error));
     } finally {
       setIsSending(false);
     }

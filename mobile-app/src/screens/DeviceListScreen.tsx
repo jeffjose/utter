@@ -16,18 +16,22 @@ import { useConnectionStore } from '../state/useConnectionStore';
 import type { Device } from '../types/device';
 
 export default function DeviceListScreen({ navigation }: any) {
-  const { devices, isConnected, disconnect } = useConnectionStore();
+  const { devices, isConnected, disconnect, requestDeviceList } = useConnectionStore();
 
   useEffect(() => {
     if (!isConnected) {
       navigation.replace('ServerConnection');
+    } else {
+      // Request device list when screen mounts
+      console.log('DeviceListScreen: Requesting device list');
+      requestDeviceList();
     }
   }, [isConnected]);
 
   const handleDevicePress = (device: Device) => {
     navigation.navigate('TextInput', {
-      deviceId: device.id,
-      deviceName: device.name,
+      deviceId: device.deviceId,
+      deviceName: device.deviceName,
       publicKey: device.publicKey,
     });
   };
@@ -43,10 +47,10 @@ export default function DeviceListScreen({ navigation }: any) {
       onPress={() => handleDevicePress(item)}
     >
       <View style={styles.deviceInfo}>
-        <Text style={styles.deviceName}>{item.name}</Text>
-        <Text style={styles.deviceType}>{item.type}</Text>
+        <Text style={styles.deviceName}>{item.deviceName}</Text>
+        <Text style={styles.deviceType}>{item.deviceType}</Text>
       </View>
-      <View style={[styles.statusDot, item.online && styles.statusOnline]} />
+      <View style={[styles.statusDot, item.status === 'online' && styles.statusOnline]} />
     </TouchableOpacity>
   );
 
@@ -54,9 +58,20 @@ export default function DeviceListScreen({ navigation }: any) {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Select Device</Text>
-        <TouchableOpacity onPress={handleDisconnect}>
-          <Text style={styles.disconnectButton}>Disconnect</Text>
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity
+            onPress={() => {
+              console.log('Manual refresh requested');
+              requestDeviceList();
+            }}
+            style={styles.refreshButton}
+          >
+            <Text style={styles.refreshButtonText}>↻ Refresh</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleDisconnect}>
+            <Text style={styles.disconnectButton}>Disconnect</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {devices.length === 0 ? (
@@ -71,7 +86,7 @@ export default function DeviceListScreen({ navigation }: any) {
         <FlatList
           data={devices}
           renderItem={renderDevice}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => item.deviceId}
           contentContainerStyle={styles.list}
         />
       )}
@@ -97,6 +112,19 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: '#333',
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  refreshButton: {
+    marginRight: 8,
+  },
+  refreshButtonText: {
+    color: '#6750A4',
+    fontSize: 16,
+    fontWeight: '600',
   },
   disconnectButton: {
     color: '#6750A4',
